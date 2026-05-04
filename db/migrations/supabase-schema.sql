@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS trainers (
   incentive_rate  NUMERIC(5,4) NOT NULL DEFAULT 0.5,
   specialization  TEXT,
   certifications  TEXT,
+  biometric_code  TEXT UNIQUE,
+  biometric_added BOOLEAN DEFAULT FALSE,
   status          TEXT NOT NULL DEFAULT 'active'
                     CHECK (status IN ('active','inactive')),
   notes           TEXT,
@@ -82,6 +84,9 @@ CREATE TABLE IF NOT EXISTS clients (
   payment_date    DATE,
   weight          NUMERIC(5,2),
   notes           TEXT,
+  photo_url       TEXT,
+  biometric_code  TEXT UNIQUE,
+  biometric_added BOOLEAN DEFAULT FALSE,
   status          TEXT NOT NULL DEFAULT 'active'
                     CHECK (status IN ('active','expired','frozen')),
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),

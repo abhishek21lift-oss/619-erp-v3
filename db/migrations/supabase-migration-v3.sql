@@ -31,6 +31,7 @@ ALTER TABLE clients
   ADD COLUMN IF NOT EXISTS pincode           TEXT,
   ADD COLUMN IF NOT EXISTS member_code       TEXT,
   ADD COLUMN IF NOT EXISTS photo_url         TEXT,
+  ADD COLUMN IF NOT EXISTS biometric_code    TEXT,
   ADD COLUMN IF NOT EXISTS is_mobile_redacted BOOLEAN DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS biometric_added   BOOLEAN DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS app_installed     BOOLEAN DEFAULT FALSE,
@@ -38,6 +39,13 @@ ALTER TABLE clients
   ADD COLUMN IF NOT EXISTS emergency_no      TEXT,
   ADD COLUMN IF NOT EXISTS frozen_until      DATE,
   ADD COLUMN IF NOT EXISTS frozen_from       DATE;
+
+ALTER TABLE trainers
+  ADD COLUMN IF NOT EXISTS biometric_code    TEXT,
+  ADD COLUMN IF NOT EXISTS biometric_added   BOOLEAN DEFAULT FALSE;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_biometric_code ON clients(biometric_code) WHERE biometric_code IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trainers_biometric_code ON trainers(biometric_code) WHERE biometric_code IS NOT NULL;
 
 -- Backfill: split name into first/last and assign member_code if missing
 UPDATE clients

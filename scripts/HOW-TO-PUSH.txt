@@ -1,0 +1,121 @@
+════════════════════════════════════════════════════════════════════
+  HOW TO PUSH GYMOS V2 TO GITHUB — IN PLAIN ENGLISH
+════════════════════════════════════════════════════════════════════
+
+You don't need to understand git. Just follow these 3 steps.
+
+
+STEP 1 — Find your frontend repo folder
+─────────────────────────────────────────
+This is the folder on your computer that you originally cloned from
+GitHub. It contains a "package.json" file and a hidden ".git" folder.
+
+Common spots people put it:
+  D:\619-frontend
+  C:\Users\Lenovo\Desktop\619-frontend
+  C:\Users\Lenovo\projects\619-erp-frontend
+
+Once you find it:
+  - Open the folder in File Explorer
+  - Click the address bar at the top
+  - Press Ctrl+C to copy the path
+
+
+STEP 2 — Double-click EASY-PUSH-TO-GITHUB.bat
+─────────────────────────────────────────────
+It's in the same folder as this file. When the window opens:
+  - Paste the path you copied
+  - Press Enter
+  - Wait
+
+That's it. The script does everything else automatically:
+  - Copies the 10 changed files into your repo
+  - Saves them ("git commit")
+  - Uploads them to GitHub ("git push")
+
+
+STEP 3 — Wait for the site to redeploy
+──────────────────────────────────────
+If your hosting (Vercel, Netlify, Render, etc.) is connected to
+GitHub, it will rebuild within a few minutes — no action needed.
+
+Open your hosting dashboard to watch the deploy. When it's green,
+visit your site and you'll see the new sidebar and dashboard.
+
+
+════════════════════════════════════════════════════════════════════
+  IF SOMETHING GOES WRONG
+════════════════════════════════════════════════════════════════════
+
+"That folder does not exist"
+  → You typed the wrong path. Use File Explorer's address bar
+    to copy the exact path, then paste it.
+
+"Git is not installed"
+  → Download git from https://git-scm.com and install it,
+    then run the script again.
+
+"Push failed: authentication" / asks for login
+  → The very first time you push from a computer, Windows pops
+    up a GitHub login window. Sign in there, then try again.
+
+"Push failed: rejected — non-fast-forward"
+  → Someone else (or you on another device) pushed first.
+    Open Command Prompt in your repo folder and run:
+        git pull --rebase
+    Then double-click the script again.
+
+
+════════════════════════════════════════════════════════════════════
+  WHAT THE 3 GIT COMMANDS ACTUALLY MEAN (if you're curious)
+════════════════════════════════════════════════════════════════════
+
+  git add -A          "Mark all changed files to be saved"
+  git commit -m "..." "Save them with this message"
+  git push            "Upload my saved changes to GitHub"
+
+That's the whole workflow. Add -> Commit -> Push.
+
+
+════════════════════════════════════════════════════════════════════
+  WHAT IF I DON'T HAVE THE FRONTEND REPO ON THIS COMPUTER?
+════════════════════════════════════════════════════════════════════
+
+Two options:
+
+  A) Clone it first.
+     - On GitHub, open your frontend repo, click the green "Code"
+       button, copy the HTTPS URL.
+     - On your computer, open Command Prompt and run:
+         cd D:\
+         git clone <paste-the-url-here>
+     - That makes a folder. Use that folder's path in Step 1.
+
+  B) Edit on GitHub directly (slow but no install needed).
+     - On GitHub, navigate to each file in the list below.
+     - Click the pencil icon to edit, paste in the new contents
+       from this folder, click "Commit changes".
+     - Files to update (paths under your repo):
+         src/lib/nav-config.ts             (NEW)
+         src/lib/favorites.ts              (NEW)
+         src/components/CommandPalette.tsx (NEW)
+         src/components/Breadcrumbs.tsx    (NEW)
+         src/components/NotificationBell.tsx (NEW)
+         src/components/TopBar.tsx         (NEW)
+         src/components/Sidebar.tsx        (replace)
+         src/app/dashboard/page.tsx        (replace)
+         src/app/layout.tsx                (replace)
+         src/app/globals.css               (replace)
+
+
+════════════════════════════════════════════════════════════════════
+  BACKEND AND DATABASE
+════════════════════════════════════════════════════════════════════
+
+NOTHING TO DO. This batch of changes is frontend-only:
+  - Backend GitHub repo: no changes
+  - Supabase database: no changes, no migrations, no SQL to run
+
+Just push the frontend. That's all.
+
+════════════════════════════════════════════════════════════════════
