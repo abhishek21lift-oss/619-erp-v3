@@ -126,11 +126,14 @@ app.post('/api/auth/login', loginLimiter);
 // ─────────────────────────────
 app.use('/api/auth',       require('./routes/auth'));
 app.use('/api/clients',    require('./routes/clients'));
+// Membership action sub-routes: /api/clients/:id/freeze|upgrade|downgrade|etc.
+app.use('/api/clients',    require('./routes/client-actions'));
 app.use('/api/trainers',   require('./routes/trainers'));
 app.use('/api/payments',   require('./routes/payments'));
 app.use('/api/dashboard',  require('./routes/dashboard'));
 app.use('/api/attendance', require('./routes/attendance'));
 app.use('/api/reports',    require('./routes/reports'));
+app.use('/api/plans',      require('./routes/plans'));
 
 // ─────────────────────────────
 // 404 (any unmatched /api route)
