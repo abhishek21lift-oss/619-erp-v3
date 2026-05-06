@@ -4,7 +4,7 @@ const pool = require('../db/pool');
 const { auth, adminOnly } = require('../middleware/auth');
 
 // GET /api/reports/monthly
-router.get('/monthly', auth, async (req, res) => {
+router.get('/monthly', auth, async (req, res, next) => {
   try {
     const { year = new Date().getFullYear() } = req.query;
     const isTrainer = req.user.role === 'trainer';
@@ -26,12 +26,12 @@ router.get('/monthly', auth, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET /api/reports/trainer-summary (admin only)
-router.get('/trainer-summary', auth, adminOnly, async (req, res) => {
+router.get('/trainer-summary', auth, adminOnly, async (req, res, next) => {
   try {
     const { rows } = await pool.query(`
       SELECT t.id, t.name, t.specialization,
@@ -48,12 +48,12 @@ router.get('/trainer-summary', auth, adminOnly, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET /api/reports/dues
-router.get('/dues', auth, async (req, res) => {
+router.get('/dues', auth, async (req, res, next) => {
   try {
     const tid = req.user.role === 'trainer' ? req.user.trainer_id : null;
     const params = [];
@@ -72,7 +72,7 @@ router.get('/dues', auth, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 

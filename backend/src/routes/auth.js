@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 const jwt    = require('jsonwebtoken');
 const { v4: uuid } = require('uuid');
 const pool   = require('../db/pool');
-const { auth, adminOnly } = require('../middleware/auth');
+const { auth, adminOnly, invalidateUserCache } = require('../middleware/auth');
 
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
@@ -122,6 +122,7 @@ async function changePasswordHandler(req, res) {
       'UPDATE users SET password = $1, updated_at = NOW() WHERE id = $2',
       [hashed, req.user.id]
     );
+    invalidateUserCache(req.user.id);
     res.json({ message: 'Password changed successfully' });
   } catch (err) {
     console.error('Change password error:', err.message);
@@ -194,6 +195,7 @@ router.put('/users/:id/toggle', auth, adminOnly, async (req, res) => {
       [req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'User not found' });
+    invalidateUserCache(req.params.id);
     res.json({ message: 'Updated', is_active: rows[0].is_active });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
@@ -205,6 +207,7 @@ router.delete('/users/:id', auth, adminOnly, async (req, res) => {
   if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot delete yourself' });
   try {
     await pool.query('DELETE FROM users WHERE id = $1', [req.params.id]);
+    invalidateUserCache(req.params.id);
     res.json({ message: 'User deleted' });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });

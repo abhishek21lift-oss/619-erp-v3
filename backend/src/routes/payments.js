@@ -2,10 +2,11 @@
 const router = require('express').Router();
 const { v4: uuid } = require('uuid');
 const pool = require('../db/pool');
+const { genReceiptNo } = require('../db/receipts');
 const { auth, adminOnly } = require('../middleware/auth');
 
 // GET /api/payments
-router.get('/', auth, async (req, res) => {
+router.get('/', auth, async (req, res, next) => {
   try {
     const { client_id, trainer_id, from, to, limit = 200, offset = 0 } = req.query;
     const conditions = [];
@@ -39,12 +40,12 @@ router.get('/', auth, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST /api/payments
-router.post('/', auth, async (req, res) => {
+router.post('/', auth, async (req, res, next) => {
   const tx = await pool.connect();
   try {
     const d = req.body;
@@ -84,7 +85,7 @@ router.post('/', auth, async (req, res) => {
     }
 
     const id = uuid();
-    const receiptNo = `RCP-${new Date().toISOString().split('T')[0].replace(/-/g,'')}-${Math.floor(1000+Math.random()*9000)}`;
+    const receiptNo = await genReceiptNo(tx);
 
     await tx.query(`
       INSERT INTO payments (id,client_id,client_name,trainer_id,trainer_name,
@@ -113,7 +114,7 @@ router.post('/', auth, async (req, res) => {
   } catch (err) {
     await tx.query('ROLLBACK').catch(() => {});
     console.error('Payment error:', err.message);
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally {
     tx.release();
   }
@@ -124,17 +125,20 @@ router.post('/', auth, async (req, res) => {
 // Soft delete by default (sets deleted_at). The balance reversal still runs
 // so the client's paid/balance figures stay correct. Pass ?hard=1 to fully
 // remove the row — only do this for tests.
-router.delete('/:id', auth, adminOnly, async (req, res) => {
+router.delete('/:id', auth, adminOnly, async (req, res, next) => {
   const tx = await pool.connect();
   try {
     await tx.query('BEGIN');
 
     let payment;
+    let alreadyReversed = false;
     if (req.query.hard === '1') {
+      // Don't double-reverse a balance that a prior soft-delete already reset.
       const { rows } = await tx.query(
         'DELETE FROM payments WHERE id=$1 RETURNING *', [req.params.id]
       );
       payment = rows[0];
+      if (payment && payment.deleted_at) alreadyReversed = true;
     } else {
       const { rows } = await tx.query(
         `UPDATE payments
@@ -150,19 +154,22 @@ router.delete('/:id', auth, adminOnly, async (req, res) => {
       return res.status(404).json({ error: 'Not found' });
     }
 
-    // Reverse the balance change atomically
-    await tx.query(`
-      UPDATE clients
-      SET paid_amount = GREATEST(0, paid_amount - $1),
-          balance_amount = balance_amount + $1,
-          updated_at = NOW()
-      WHERE id = $2`, [payment.amount, payment.client_id]
-    );
+    // Reverse the balance change atomically (only if not already done
+    // by a previous soft-delete of the same row).
+    if (!alreadyReversed) {
+      await tx.query(`
+        UPDATE clients
+        SET paid_amount = GREATEST(0, paid_amount - $1),
+            balance_amount = balance_amount + $1,
+            updated_at = NOW()
+        WHERE id = $2`, [payment.amount, payment.client_id]
+      );
+    }
     await tx.query('COMMIT');
     res.json({ message: 'Payment deleted' });
   } catch (err) {
     await tx.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally {
     tx.release();
   }

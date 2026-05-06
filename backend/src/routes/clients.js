@@ -2,6 +2,7 @@
 const router = require('express').Router();
 const { v4: uuid } = require('uuid');
 const pool   = require('../db/pool');
+const { genReceiptNo } = require('../db/receipts');
 const { auth, adminOnly } = require('../middleware/auth');
 
 // Helper: parse a value as a finite number, or return fallback.
@@ -237,7 +238,7 @@ router.post('/:id/renew', auth, async (req, res, next) => {
         );
         incentiveRate = tr[0]?.incentive_rate ?? 0.5;
       }
-      const receiptNo = `RCP-${new Date().toISOString().split('T')[0].replace(/-/g,'')}-${Math.floor(1000+Math.random()*9000)}`;
+      const receiptNo = await genReceiptNo(tx);
       await tx.query(`
         INSERT INTO payments (id, client_id, client_name, trainer_id, trainer_name,
           amount, method, date, receipt_no, package_type, incentive_amt, notes)
@@ -395,7 +396,7 @@ router.post('/', auth, async (req, res, next) => {
 
     // If paid > 0, auto-create a payment record (in same transaction)
     if (paid > 0) {
-      const receiptNo = `RCP-${Date.now()}`;
+      const receiptNo = await genReceiptNo(client);
       await client.query(`
         INSERT INTO payments (id, client_id, client_name, trainer_id, trainer_name,
           amount, method, date, receipt_no, package_type, incentive_amt)

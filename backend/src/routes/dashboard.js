@@ -155,8 +155,7 @@ router.get('/summary', auth, async (req, res, next) => {
         FROM   clients
         WHERE  status = 'active'
           AND  dob IS NOT NULL
-          AND  EXTRACT(MONTH FROM dob::date) = EXTRACT(MONTH FROM CURRENT_DATE)
-          AND  EXTRACT(DAY   FROM dob::date) = EXTRACT(DAY   FROM CURRENT_DATE)
+          AND  EXTRACT(DOY FROM dob::date) = EXTRACT(DOY FROM CURRENT_DATE)
           ${tFilter}`, params),
 
       /* ── 12. Anniversaries today ────────────────────────────────── */
@@ -165,9 +164,8 @@ router.get('/summary', auth, async (req, res, next) => {
         FROM   clients
         WHERE  status     = 'active'
           AND  joining_date IS NOT NULL
-          AND  EXTRACT(MONTH FROM joining_date::date) = EXTRACT(MONTH FROM CURRENT_DATE)
-          AND  EXTRACT(DAY   FROM joining_date::date) = EXTRACT(DAY   FROM CURRENT_DATE)
-          AND  EXTRACT(YEAR  FROM joining_date::date) < EXTRACT(YEAR  FROM CURRENT_DATE)
+          AND  EXTRACT(DOY  FROM joining_date::date) = EXTRACT(DOY  FROM CURRENT_DATE)
+          AND  EXTRACT(YEAR FROM joining_date::date) < EXTRACT(YEAR FROM CURRENT_DATE)
           ${tFilter}`, params),
 
       /* ── 13. Pending renewals (expired within last 30 days) ─────── */

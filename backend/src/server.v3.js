@@ -47,7 +47,10 @@ const allowedOrigins = [
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin) return cb(null, true);
-    if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) return cb(null, true);
+    if (allowedOrigins.includes(origin)) return cb(null, true);
+    // SECURITY: do NOT honor an explicit '*' with credentials:true. Browsers
+    // already reject that combination but server-to-server callers wouldn't.
+    console.warn('CORS blocked origin:', origin, '— allowed:', allowedOrigins);
     cb(new Error('CORS: origin not allowed'));
   },
   credentials: true,

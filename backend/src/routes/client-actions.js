@@ -4,11 +4,39 @@
 const router = require('express').Router();
 const { v4: uuid } = require('uuid');
 const pool = require('../db/pool');
+const { genReceiptNo } = require('../db/receipts');
 const { auth } = require('../middleware/auth');
 
 function num(v, fb = 0) {
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : fb;
+}
+
+// ── RBAC GUARD ──────────────────────────────────────────────────────
+// Without this guard a trainer could freeze, transfer, upgrade or otherwise
+// mutate ANY client in the system (privilege escalation).
+//   admin / manager / reception → may act on any client
+//   trainer                     → only on clients with matching trainer_id
+//   anything else               → denied
+async function assertCanActOnClient(req, res, tx, client) {
+  const role = req.user && req.user.role;
+  if (role === 'admin' || role === 'manager' || role === 'reception') return true;
+  if (role === 'trainer') {
+    if (!req.user.trainer_id) {
+      await tx.query('ROLLBACK');
+      res.status(403).json({ error: 'Access denied: trainer profile not linked' });
+      return false;
+    }
+    if (client.trainer_id !== req.user.trainer_id) {
+      await tx.query('ROLLBACK');
+      res.status(403).json({ error: 'Access denied: client is not assigned to you' });
+      return false;
+    }
+    return true;
+  }
+  await tx.query('ROLLBACK');
+  res.status(403).json({ error: 'Access denied' });
+  return false;
 }
 
 async function logAction(tx, clientId, clientName, trainerId, type, oldVal, newVal, amount, method, notes, performedBy) {
@@ -26,7 +54,7 @@ async function logAction(tx, clientId, clientName, trainerId, type, oldVal, newV
 
 // ── FREEZE ───────────────────────────────────────────────────────────────
 // POST /api/clients/:id/freeze
-router.post('/:id/freeze', auth, async (req, res) => {
+router.post('/:id/freeze', auth, async (req, res, next) => {
   const tx = await pool.connect();
   try {
     const d = req.body;
@@ -37,6 +65,7 @@ router.post('/:id/freeze', auth, async (req, res) => {
     const { rows } = await tx.query('SELECT * FROM clients WHERE id=$1 FOR UPDATE', [req.params.id]);
     if (!rows[0]) { await tx.query('ROLLBACK'); return res.status(404).json({ error: 'Client not found' }); }
     const c = rows[0];
+    if (!(await assertCanActOnClient(req, res, tx, c))) return;
 
     await tx.query(
       `UPDATE clients SET freeze_from=$1, freeze_until=$2, freeze_reason=$3,
@@ -52,13 +81,13 @@ router.post('/:id/freeze', auth, async (req, res) => {
     res.json({ message: 'Membership frozen', client: fresh[0] });
   } catch (err) {
     await tx.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally { tx.release(); }
 });
 
 // ── EXTENSION ────────────────────────────────────────────────────────────
 // POST /api/clients/:id/extension
-router.post('/:id/extension', auth, async (req, res) => {
+router.post('/:id/extension', auth, async (req, res, next) => {
   const tx = await pool.connect();
   try {
     const d = req.body;
@@ -69,6 +98,7 @@ router.post('/:id/extension', auth, async (req, res) => {
     const { rows } = await tx.query('SELECT * FROM clients WHERE id=$1 FOR UPDATE', [req.params.id]);
     if (!rows[0]) { await tx.query('ROLLBACK'); return res.status(404).json({ error: 'Client not found' }); }
     const c = rows[0];
+    if (!(await assertCanActOnClient(req, res, tx, c))) return;
 
     const { rows: ext } = await tx.query(
       `UPDATE clients SET
@@ -86,13 +116,13 @@ router.post('/:id/extension', auth, async (req, res) => {
     res.json({ message: `Membership extended by ${days} days`, client: fresh[0] });
   } catch (err) {
     await tx.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally { tx.release(); }
 });
 
 // ── UPGRADE ──────────────────────────────────────────────────────────────
 // POST /api/clients/:id/upgrade
-router.post('/:id/upgrade', auth, async (req, res) => {
+router.post('/:id/upgrade', auth, async (req, res, next) => {
   const tx = await pool.connect();
   try {
     const d = req.body;
@@ -102,6 +132,7 @@ router.post('/:id/upgrade', auth, async (req, res) => {
     const { rows } = await tx.query('SELECT * FROM clients WHERE id=$1 FOR UPDATE', [req.params.id]);
     if (!rows[0]) { await tx.query('ROLLBACK'); return res.status(404).json({ error: 'Client not found' }); }
     const c = rows[0];
+    if (!(await assertCanActOnClient(req, res, tx, c))) return;
 
     const amount = num(d.amount, 0);
     await tx.query(
@@ -122,7 +153,7 @@ router.post('/:id/upgrade', auth, async (req, res) => {
        c.pt_end_date, d.end_date || c.pt_end_date, amount, d.payment_method || 'CASH', d.reason || null]);
 
     if (amount > 0) {
-      const rcp = `RCP-${Date.now()}`;
+      const rcp = await genReceiptNo(tx);
       let iRate = 0.5;
       if (c.trainer_id) {
         const { rows: tr } = await tx.query('SELECT incentive_rate FROM trainers WHERE id=$1', [c.trainer_id]);
@@ -145,13 +176,13 @@ router.post('/:id/upgrade', auth, async (req, res) => {
     res.json({ message: `Upgraded to ${d.package_type}`, client: fresh[0] });
   } catch (err) {
     await tx.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally { tx.release(); }
 });
 
 // ── DOWNGRADE ────────────────────────────────────────────────────────────
 // POST /api/clients/:id/downgrade
-router.post('/:id/downgrade', auth, async (req, res) => {
+router.post('/:id/downgrade', auth, async (req, res, next) => {
   const tx = await pool.connect();
   try {
     const d = req.body;
@@ -162,6 +193,7 @@ router.post('/:id/downgrade', auth, async (req, res) => {
     const { rows } = await tx.query('SELECT * FROM clients WHERE id=$1 FOR UPDATE', [req.params.id]);
     if (!rows[0]) { await tx.query('ROLLBACK'); return res.status(404).json({ error: 'Client not found' }); }
     const c = rows[0];
+    if (!(await assertCanActOnClient(req, res, tx, c))) return;
 
     const amount = num(d.amount, 0);
     await tx.query(
@@ -187,15 +219,20 @@ router.post('/:id/downgrade', auth, async (req, res) => {
     res.json({ message: `Downgraded to ${d.package_type}`, client: fresh[0] });
   } catch (err) {
     await tx.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally { tx.release(); }
 });
 
 // ── TRANSFER (change trainer) ─────────────────────────────────────────────
-// POST /api/clients/:id/transfer
-router.post('/:id/transfer', auth, async (req, res) => {
+// POST /api/clients/:id/transfer  — admin/manager/reception only.
+// Trainers must NOT initiate transfers (they could otherwise reassign
+// clients to themselves to inflate their book / incentives).
+router.post('/:id/transfer', auth, async (req, res, next) => {
   const tx = await pool.connect();
   try {
+    if (!['admin', 'manager', 'reception'].includes(req.user && req.user.role)) {
+      return res.status(403).json({ error: 'Only admin/manager/reception can transfer clients' });
+    }
     const d = req.body;
     if (!d.new_trainer_id) return res.status(400).json({ error: 'new_trainer_id is required' });
 
@@ -203,6 +240,7 @@ router.post('/:id/transfer', auth, async (req, res) => {
     const { rows } = await tx.query('SELECT * FROM clients WHERE id=$1 FOR UPDATE', [req.params.id]);
     if (!rows[0]) { await tx.query('ROLLBACK'); return res.status(404).json({ error: 'Client not found' }); }
     const c = rows[0];
+    if (!(await assertCanActOnClient(req, res, tx, c))) return;
 
     const { rows: tr } = await tx.query('SELECT name FROM trainers WHERE id=$1', [d.new_trainer_id]);
     if (!tr[0]) { await tx.query('ROLLBACK'); return res.status(404).json({ error: 'New trainer not found' }); }
@@ -222,13 +260,13 @@ router.post('/:id/transfer', auth, async (req, res) => {
     res.json({ message: `Transferred to ${tr[0].name}`, client: fresh[0] });
   } catch (err) {
     await tx.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally { tx.release(); }
 });
 
 // ── COMBO OFFER ──────────────────────────────────────────────────────────
 // POST /api/clients/:id/combo
-router.post('/:id/combo', auth, async (req, res) => {
+router.post('/:id/combo', auth, async (req, res, next) => {
   const tx = await pool.connect();
   try {
     const d = req.body;
@@ -238,6 +276,7 @@ router.post('/:id/combo', auth, async (req, res) => {
     const { rows } = await tx.query('SELECT * FROM clients WHERE id=$1 FOR UPDATE', [req.params.id]);
     if (!rows[0]) { await tx.query('ROLLBACK'); return res.status(404).json({ error: 'Client not found' }); }
     const c = rows[0];
+    if (!(await assertCanActOnClient(req, res, tx, c))) return;
 
     const amount = num(d.amount, 0);
     const trainerId = d.trainer_id || c.trainer_id;
@@ -265,7 +304,7 @@ router.post('/:id/combo', auth, async (req, res) => {
           amount,method,date,receipt_no,package_type,incentive_amt,notes)
         VALUES (gen_random_uuid()::TEXT,$1,$2,$3,$4,$5,$6,CURRENT_DATE,$7,$8,$9,$10)`,
         [c.id, c.name, trainerId, c.trainer_name, amount,
-         d.payment_method || 'CASH', `RCP-${Date.now()}`, d.combo_plan,
+         d.payment_method || 'CASH', await genReceiptNo(tx), d.combo_plan,
          Math.round(amount * iRate), `Combo: ${d.combo_plan}`]);
     }
 
@@ -278,13 +317,13 @@ router.post('/:id/combo', auth, async (req, res) => {
     res.json({ message: 'Combo offer applied', client: fresh[0] });
   } catch (err) {
     await tx.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally { tx.release(); }
 });
 
 // ── TRIAL ────────────────────────────────────────────────────────────────
 // POST /api/clients/:id/trial
-router.post('/:id/trial', auth, async (req, res) => {
+router.post('/:id/trial', auth, async (req, res, next) => {
   const tx = await pool.connect();
   try {
     const d = req.body;
@@ -294,6 +333,7 @@ router.post('/:id/trial', auth, async (req, res) => {
     const { rows } = await tx.query('SELECT * FROM clients WHERE id=$1 FOR UPDATE', [req.params.id]);
     if (!rows[0]) { await tx.query('ROLLBACK'); return res.status(404).json({ error: 'Client not found' }); }
     const c = rows[0];
+    if (!(await assertCanActOnClient(req, res, tx, c))) return;
 
     await tx.query(
       `INSERT INTO trials (id,client_id,client_name,trainer_id,trainer_name,
@@ -312,16 +352,16 @@ router.post('/:id/trial', auth, async (req, res) => {
   } catch (err) {
     await tx.query('ROLLBACK').catch(() => {});
     // trials table might not exist yet
-    if (err.message.includes('does not exist')) {
+    if (err && typeof err.message === 'string' && err.message.includes('does not exist')) {
       return res.json({ message: 'Trial booked (sync pending)' });
     }
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally { tx.release(); }
 });
 
 // ── ASSIGN PT ────────────────────────────────────────────────────────────
 // POST /api/clients/:id/assign-pt
-router.post('/:id/assign-pt', auth, async (req, res) => {
+router.post('/:id/assign-pt', auth, async (req, res, next) => {
   const tx = await pool.connect();
   try {
     const d = req.body;
@@ -333,6 +373,7 @@ router.post('/:id/assign-pt', auth, async (req, res) => {
     const { rows } = await tx.query('SELECT * FROM clients WHERE id=$1 FOR UPDATE', [req.params.id]);
     if (!rows[0]) { await tx.query('ROLLBACK'); return res.status(404).json({ error: 'Client not found' }); }
     const c = rows[0];
+    if (!(await assertCanActOnClient(req, res, tx, c))) return;
 
     const { rows: tr } = await tx.query('SELECT name, incentive_rate FROM trainers WHERE id=$1', [d.trainer_id]);
     if (!tr[0]) { await tx.query('ROLLBACK'); return res.status(404).json({ error: 'Trainer not found' }); }
@@ -357,7 +398,7 @@ router.post('/:id/assign-pt', auth, async (req, res) => {
           amount,method,date,receipt_no,package_type,incentive_amt,notes)
         VALUES (gen_random_uuid()::TEXT,$1,$2,$3,$4,$5,$6,CURRENT_DATE,$7,$8,$9,$10)`,
         [c.id, c.name, d.trainer_id, tr[0].name, amount,
-         d.payment_method || 'CASH', `RCP-${Date.now()}`,
+         d.payment_method || 'CASH', await genReceiptNo(tx),
          d.membership_plan || 'PT',
          Math.round(amount * (tr[0].incentive_rate ?? 0.5)),
          `PT Assignment — ${d.membership_plan || 'PT'}`]);
@@ -372,13 +413,13 @@ router.post('/:id/assign-pt', auth, async (req, res) => {
     res.json({ message: 'Personal Training assigned', client: fresh[0] });
   } catch (err) {
     await tx.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally { tx.release(); }
 });
 
 // ── RENEW PT (alias for existing pt-renew) ───────────────────────────────
 // POST /api/clients/:id/renew-pt
-router.post('/:id/renew-pt', auth, async (req, res) => {
+router.post('/:id/renew-pt', auth, async (req, res, next) => {
   req.url = `/${req.params.id}/pt-renew`;
   // delegate to clients router — inline implementation to avoid circular deps
   const tx = await pool.connect();
@@ -391,6 +432,7 @@ router.post('/:id/renew-pt', auth, async (req, res) => {
     const { rows } = await tx.query('SELECT * FROM clients WHERE id=$1 FOR UPDATE', [req.params.id]);
     if (!rows[0]) { await tx.query('ROLLBACK'); return res.status(404).json({ error: 'Client not found' }); }
     const c = rows[0];
+    if (!(await assertCanActOnClient(req, res, tx, c))) return;
 
     const amount = num(d.amount, 0);
     const trainerId = d.trainer_id || c.trainer_id;
@@ -426,7 +468,7 @@ router.post('/:id/renew-pt', auth, async (req, res) => {
           amount,method,date,receipt_no,package_type,incentive_amt,notes)
         VALUES (gen_random_uuid()::TEXT,$1,$2,$3,$4,$5,$6,CURRENT_DATE,$7,$8,$9,$10)`,
         [c.id, c.name, trainerId, c.trainer_name, amount,
-         d.payment_method || 'CASH', `RCP-${Date.now()}`,
+         d.payment_method || 'CASH', await genReceiptNo(tx),
          d.membership_plan || 'PT',
          Math.round(amount * iRate), 'PT Renewal']);
     }
@@ -436,13 +478,13 @@ router.post('/:id/renew-pt', auth, async (req, res) => {
     res.json({ message: 'Personal Training renewed', client: fresh[0] });
   } catch (err) {
     await tx.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally { tx.release(); }
 });
 
 // ── ADD SUBSCRIPTION ──────────────────────────────────────────────────────
 // POST /api/clients/:id/add-subscription
-router.post('/:id/add-subscription', auth, async (req, res) => {
+router.post('/:id/add-subscription', auth, async (req, res, next) => {
   const tx = await pool.connect();
   try {
     const d = req.body;
@@ -452,6 +494,7 @@ router.post('/:id/add-subscription', auth, async (req, res) => {
     const { rows } = await tx.query('SELECT * FROM clients WHERE id=$1 FOR UPDATE', [req.params.id]);
     if (!rows[0]) { await tx.query('ROLLBACK'); return res.status(404).json({ error: 'Client not found' }); }
     const c = rows[0];
+    if (!(await assertCanActOnClient(req, res, tx, c))) return;
 
     const totalAmount = planRows.reduce((s, r) => s + (parseFloat(r.sellingPrice) || 0), 0);
     const primaryRow  = planRows[0] || {};
@@ -479,7 +522,7 @@ router.post('/:id/add-subscription', auth, async (req, res) => {
           amount,method,date,receipt_no,package_type,incentive_amt,notes)
         VALUES (gen_random_uuid()::TEXT,$1,$2,$3,$4,$5,$6,CURRENT_DATE,$7,$8,$9,$10)`,
         [c.id, c.name, c.trainer_id, c.trainer_name, totalAmount,
-         d.payment_method || 'CASH', `RCP-${Date.now()}`,
+         d.payment_method || 'CASH', await genReceiptNo(tx),
          primaryRow.plan || c.package_type,
          Math.round(totalAmount * iRate), 'Add Subscription']);
     }
@@ -494,14 +537,14 @@ router.post('/:id/add-subscription', auth, async (req, res) => {
     res.json({ message: 'Subscription added', client: fresh[0] });
   } catch (err) {
     await tx.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally { tx.release(); }
 });
 
 // ── RENEW SUBSCRIPTION ───────────────────────────────────────────────────
 // POST /api/clients/:id/renew-subscription
 // (mirrors /renew but uses the new route name the frontend calls)
-router.post('/:id/renew-subscription', auth, async (req, res) => {
+router.post('/:id/renew-subscription', auth, async (req, res, next) => {
   const tx = await pool.connect();
   try {
     const d = req.body;
@@ -515,6 +558,7 @@ router.post('/:id/renew-subscription', auth, async (req, res) => {
     const { rows } = await tx.query('SELECT * FROM clients WHERE id=$1 FOR UPDATE', [req.params.id]);
     if (!rows[0]) { await tx.query('ROLLBACK'); return res.status(404).json({ error: 'Client not found' }); }
     const c = rows[0];
+    if (!(await assertCanActOnClient(req, res, tx, c))) return;
 
     const totalAmount = planRows.length > 0
       ? planRows.reduce((s, r) => s + (parseFloat(r.sellingPrice) || 0), 0)
@@ -550,7 +594,7 @@ router.post('/:id/renew-subscription', auth, async (req, res) => {
           amount,method,date,receipt_no,package_type,incentive_amt,notes)
         VALUES (gen_random_uuid()::TEXT,$1,$2,$3,$4,$5,$6,CURRENT_DATE,$7,$8,$9,$10)`,
         [c.id, c.name, c.trainer_id, c.trainer_name, totalAmount,
-         d.payment_method || 'CASH', `RCP-${Date.now()}`, pkg,
+         d.payment_method || 'CASH', await genReceiptNo(tx), pkg,
          Math.round(totalAmount * iRate), `Renewal — ${pkg}`]);
     }
 
@@ -559,7 +603,7 @@ router.post('/:id/renew-subscription', auth, async (req, res) => {
     res.json({ message: `Subscription renewed — ${pkg}`, client: fresh[0] });
   } catch (err) {
     await tx.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally { tx.release(); }
 });
 

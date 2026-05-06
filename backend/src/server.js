@@ -119,7 +119,9 @@ const loginLimiter = rateLimit({
 });
 
 app.use('/api/', apiLimiter);
-app.post('/api/auth/login', loginLimiter);
+// Mount as scoped middleware (not as a route handler) so it runs for the
+// auth router's POST /login regardless of method nuances.
+app.use('/api/auth/login', loginLimiter);
 
 // ─────────────────────────────
 // ROUTES

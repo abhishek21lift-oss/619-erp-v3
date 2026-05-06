@@ -17,9 +17,11 @@ function scrubForNonAdmin(t) {
 }
 
 // GET /api/trainers
-router.get('/', auth, async (req, res) => {
+router.get('/', auth, async (req, res, next) => {
   try {
     const isAdmin = req.user.role === 'admin';
+    const isManager = req.user.role === 'manager';
+    const ownTid = req.user.trainer_id || null;
     const { rows } = await pool.query(`
       SELECT t.*,
         COUNT(c.id) FILTER (WHERE c.status='active')  AS active_clients,
@@ -41,14 +43,20 @@ router.get('/', auth, async (req, res) => {
       month_incentive: Math.round(parseFloat(t.month_revenue) * parseFloat(t.incentive_rate ?? 0.5))
     }));
 
-    res.json(isAdmin ? enriched : enriched.map(scrubForNonAdmin));
+    // Admin/manager see everything. Other roles get the safe view EXCEPT
+    // their own row — trainers must see their own salary/contact info.
+    if (isAdmin || isManager) {
+      res.json(enriched);
+    } else {
+      res.json(enriched.map((t) => (t.id === ownTid ? t : scrubForNonAdmin(t))));
+    }
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET /api/trainers/:id  — full profile incl. clients + recent payments + KPIs
-router.get('/:id', auth, async (req, res) => {
+router.get('/:id', auth, async (req, res, next) => {
   try {
     const { rows } = await pool.query('SELECT * FROM trainers WHERE id=$1', [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Trainer not found' });
@@ -105,12 +113,12 @@ router.get('/:id', auth, async (req, res) => {
 
     res.json({ ...trainer, stats: stats[0], clients, payments, monthly });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST /api/trainers (admin only)
-router.post('/', auth, adminOnly, async (req, res) => {
+router.post('/', auth, adminOnly, async (req, res, next) => {
   try {
     const d = req.body;
     if (!d.name?.trim()) return res.status(400).json({ error: 'Name required' });
@@ -132,12 +140,12 @@ router.post('/', auth, adminOnly, async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM trainers WHERE id=$1', [id]);
     res.status(201).json({ message: 'Trainer created', trainer: rows[0] });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // PUT /api/trainers/:id (admin only)
-router.put('/:id', auth, adminOnly, async (req, res) => {
+router.put('/:id', auth, adminOnly, async (req, res, next) => {
   try {
     const d = req.body;
     const rate = d.incentive_rate ? (parseFloat(d.incentive_rate)/100) : undefined;
@@ -165,18 +173,18 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM trainers WHERE id=$1', [req.params.id]);
     res.json({ message: 'Updated', trainer: rows[0] });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // DELETE /api/trainers/:id (admin only)
-router.delete('/:id', auth, adminOnly, async (req, res) => {
+router.delete('/:id', auth, adminOnly, async (req, res, next) => {
   try {
     const { rows } = await pool.query('DELETE FROM trainers WHERE id=$1 RETURNING id', [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
     res.json({ message: 'Deleted' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 

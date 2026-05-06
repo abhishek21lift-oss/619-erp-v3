@@ -5,7 +5,7 @@ const pool = require('../db/pool');
 const { auth, adminOnly } = require('../middleware/auth');
 
 // GET /api/plans
-router.get('/', auth, async (req, res) => {
+router.get('/', auth, async (req, res, next) => {
   try {
     const { kind, active } = req.query;
     const conds = ['1=1'];
@@ -21,13 +21,13 @@ router.get('/', auth, async (req, res) => {
     res.json(rows);
   } catch (err) {
     // Table may not exist yet on fresh deployments — return empty array gracefully
-    if (err.message.includes('does not exist')) return res.json([]);
-    res.status(500).json({ error: err.message });
+    if (err && typeof err.message === 'string' && err.message.includes('does not exist')) return res.json([]);
+    next(err);
   }
 });
 
 // POST /api/plans  (admin only)
-router.post('/', auth, adminOnly, async (req, res) => {
+router.post('/', auth, adminOnly, async (req, res, next) => {
   try {
     const d = req.body;
     if (!d.name?.trim())      return res.status(400).json({ error: 'Plan name is required' });
@@ -52,23 +52,31 @@ router.post('/', auth, adminOnly, async (req, res) => {
     );
     res.status(201).json({ message: 'Plan created', plan: rows[0] });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // PUT /api/plans/:id  (admin only)
-router.put('/:id', auth, adminOnly, async (req, res) => {
+router.put('/:id', auth, adminOnly, async (req, res, next) => {
   try {
     const d = req.body;
     const { rows: ex } = await pool.query('SELECT * FROM plans WHERE id=$1', [req.params.id]);
     if (!ex[0]) return res.status(404).json({ error: 'Plan not found' });
 
-    const base  = parseFloat(d.base_amount)  ?? ex[0].base_amount;
-    const disc  = parseFloat(d.discount)     ?? ex[0].discount;
-    const final = parseFloat(d.final_amount) ?? ex[0].final_amount;
+    // BUG FIX: `parseFloat(d.x) ?? ex[0].x` is broken — when d.x is undefined
+    // parseFloat returns NaN, which is NOT nullish, so ?? does not coalesce
+    // and the column is set to NaN (Postgres rejects, surfacing as a 500).
+    // Use an explicit "is the field present?" check.
+    const numField = (key) =>
+      d[key] !== undefined && d[key] !== null && d[key] !== ''
+        ? parseFloat(d[key])
+        : ex[0][key];
+    const base  = numField('base_amount');
+    const disc  = numField('discount');
+    const final = numField('final_amount');
     const features = Array.isArray(d.features)
       ? JSON.stringify(d.features)
-      : (d.features ?? JSON.stringify(ex[0].features ?? []));
+      : (d.features !== undefined ? d.features : JSON.stringify(ex[0].features ?? []));
 
     const { rows } = await pool.query(
       `UPDATE plans SET
@@ -84,18 +92,18 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
     );
     res.json({ message: 'Plan updated', plan: rows[0] });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // DELETE /api/plans/:id  (admin only)
-router.delete('/:id', auth, adminOnly, async (req, res) => {
+router.delete('/:id', auth, adminOnly, async (req, res, next) => {
   try {
     const { rows } = await pool.query('DELETE FROM plans WHERE id=$1 RETURNING id', [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Plan not found' });
     res.json({ message: 'Plan deleted' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 

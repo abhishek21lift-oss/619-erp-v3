@@ -29,10 +29,15 @@ function buildSslConfig() {
   return { rejectUnauthorized: false };
 }
 
+const POOL_MAX = (() => {
+  const n = parseInt(process.env.DATABASE_POOL_SIZE || '', 10);
+  return Number.isFinite(n) && n > 0 ? n : 10;
+})();
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: buildSslConfig(),
-  max: 10,
+  max: POOL_MAX,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
 });

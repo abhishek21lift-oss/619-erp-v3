@@ -5,7 +5,7 @@ const pool = require('../db/pool');
 const { auth } = require('../middleware/auth');
 
 // GET /api/attendance?date=YYYY-MM-DD&type=client
-router.get('/', auth, async (req, res) => {
+router.get('/', auth, async (req, res, next) => {
   try {
     const { date, from, to, type = 'client', ref_id } = req.query;
     const conditions = ['1=1'];
@@ -35,12 +35,12 @@ router.get('/', auth, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST /api/attendance — mark attendance
-router.post('/', auth, async (req, res) => {
+router.post('/', auth, async (req, res, next) => {
   try {
     const d = req.body;
     if (!d.ref_id || !d.date || !d.type)
@@ -78,14 +78,14 @@ router.post('/', auth, async (req, res) => {
     );
     res.status(201).json({ message: 'Attendance marked' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST /api/attendance/biometric
 // A biometric device or the web terminal can send { biometric_code, type }.
 // type is optional: if omitted, members are checked first, then staff.
-router.post('/biometric', auth, async (req, res) => {
+router.post('/biometric', auth, async (req, res, next) => {
   try {
     const code = String(req.body?.biometric_code || '').trim();
     const requestedType = req.body?.type;
@@ -158,12 +158,12 @@ router.post('/biometric', auth, async (req, res) => {
       person: { id: person.id, name: person.name, type },
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET /api/attendance/today-summary
-router.get('/today-summary', auth, async (req, res) => {
+router.get('/today-summary', auth, async (req, res, next) => {
   try {
     const params = [];
     let trainerFilter = '';
@@ -184,7 +184,7 @@ router.get('/today-summary', auth, async (req, res) => {
     );
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 

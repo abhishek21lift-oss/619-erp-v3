@@ -69,7 +69,7 @@ async function logCheckIn({ clientId, status, distance, ip, userAgent }) {
 // POST /api/checkin/face
 // Body: { descriptor: number[128] }
 // ──────────────────────────────────────────────────────────────────
-router.post('/face', auth, async (req, res) => {
+router.post('/face', auth, async (req, res, next) => {
   try {
     const descriptor = req.body?.descriptor;
     if (!isValidDescriptor(descriptor)) {
@@ -100,7 +100,11 @@ router.post('/face', auth, async (req, res) => {
       });
     }
 
-    // Find the closest match
+    // Find the closest match.
+    // PERF: early-exit when we already have a confident match (< 0.30) so
+    // we don't keep scanning the rest of the table. For real scale install
+    // pgvector and switch to ORDER BY descriptor <-> $1 LIMIT 1.
+    const CONFIDENT_THRESHOLD = 0.30;
     let best = { distance: Infinity, client: null };
     for (const c of clients) {
       const stored = Array.isArray(c.face_descriptor)
@@ -109,7 +113,10 @@ router.post('/face', auth, async (req, res) => {
             ? JSON.parse(c.face_descriptor) : null);
       if (!isValidDescriptor(stored)) continue;
       const d = euclideanDistance(descriptor, stored);
-      if (d < best.distance) best = { distance: d, client: c };
+      if (d < best.distance) {
+        best = { distance: d, client: c };
+        if (d < CONFIDENT_THRESHOLD) break;
+      }
     }
 
     if (best.distance > RECOGNITION_THRESHOLD || !best.client) {
@@ -212,7 +219,7 @@ router.post('/face', auth, async (req, res) => {
     });
   } catch (err) {
     console.error('[checkin/face]', err);
-    return res.status(500).json({ success: false, error: err.message });
+    return next(err);
   }
 });
 
@@ -222,7 +229,7 @@ router.post('/face', auth, async (req, res) => {
 // Stores the face descriptor for an existing client.
 // Admin or reception only.
 // ──────────────────────────────────────────────────────────────────
-router.post('/enroll', auth, async (req, res) => {
+router.post('/enroll', auth, async (req, res, next) => {
   try {
     if (req.user.role !== 'admin' && req.user.role !== 'reception') {
       return res.status(403).json({ error: 'Admin or reception only' });
@@ -249,14 +256,14 @@ router.post('/enroll', auth, async (req, res) => {
     return res.status(200).json({ message: 'Face enrolled' });
   } catch (err) {
     console.error('[checkin/enroll]', err);
-    return res.status(500).json({ error: err.message });
+    return next(err);
   }
 });
 
 // ──────────────────────────────────────────────────────────────────
 // GET /api/checkin/logs?date=YYYY-MM-DD&limit=N
 // ──────────────────────────────────────────────────────────────────
-router.get('/logs', auth, async (req, res) => {
+router.get('/logs', auth, async (req, res, next) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 100, 500);
     const date = req.query.date;
@@ -286,7 +293,7 @@ router.get('/logs', auth, async (req, res) => {
     return res.json(rows);
   } catch (err) {
     console.error('[checkin/logs]', err);
-    return res.status(500).json({ error: err.message });
+    return next(err);
   }
 });
 
