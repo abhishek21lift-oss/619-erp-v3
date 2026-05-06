@@ -30,9 +30,16 @@ async function maybeAutoExpire() {
 }
 
 // GET /api/clients
-router.get('/', auth, async (req, res) => {
+//   ?search=…       fuzzy on name / mobile / client_id / email
+//   ?status=active|expired|frozen|expiring|dues
+//   ?trainer_id=…   admin-only filter
+//   ?limit=…        clamped to [1, 1000]
+//   ?offset=…       clamped to >= 0
+router.get('/', auth, async (req, res, next) => {
   try {
-    const { search, status, trainer_id, dues, limit = 500, offset = 0 } = req.query;
+    const { search, status, trainer_id, dues } = req.query;
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 1000);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
     const conditions = [];
     const params = [];
     let p = 1;
@@ -47,13 +54,19 @@ router.get('/', auth, async (req, res) => {
     }
 
     if (search) {
-      conditions.push(`(LOWER(c.name) LIKE $${p} OR c.mobile LIKE $${p} OR c.client_id LIKE $${p} OR LOWER(c.email) LIKE $${p})`);
-      params.push(`%${search.toLowerCase()}%`);
+      // ILIKE is the case-insensitive cousin of LIKE — and pairs with a
+      // pg_trgm index on name/email/mobile for sub-100ms search at scale.
+      conditions.push(
+        `(c.name ILIKE $${p} OR c.mobile ILIKE $${p} OR c.client_id ILIKE $${p} OR c.email ILIKE $${p})`
+      );
+      params.push(`%${String(search).trim()}%`);
       p++;
     }
 
     if (status === 'expiring') {
-      conditions.push(`c.status = 'active' AND c.pt_end_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'`);
+      conditions.push(
+        `c.status = 'active' AND c.pt_end_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'`
+      );
     } else if (status === 'dues') {
       conditions.push(`c.balance_amount > 0`);
     } else if (status) {
@@ -65,7 +78,7 @@ router.get('/', auth, async (req, res) => {
 
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
-    // Auto-expire is rate-limited to once an hour, off the hot read path
+    // Auto-expire is rate-limited to once an hour, off the hot read path.
     maybeAutoExpire();
 
     const { rows } = await pool.query(
@@ -75,17 +88,18 @@ router.get('/', auth, async (req, res) => {
        ${where}
        ORDER BY c.created_at DESC
        LIMIT $${p++} OFFSET $${p++}`,
-      [...params, parseInt(limit), parseInt(offset)]
+      [...params, limit, offset]
     );
     res.json(rows);
   } catch (err) {
-    console.error('Get clients error:', err.message);
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // GET /api/clients/:id
-router.get('/:id', auth, async (req, res) => {
+//   Returns the client + last 50 payments, 20 weight logs, 20 renewals.
+//   Fans the four queries out in parallel — was sequential before.
+router.get('/:id', auth, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
       `SELECT c.*, t.name as trainer_full_name, t.mobile as trainer_mobile
@@ -95,35 +109,42 @@ router.get('/:id', auth, async (req, res) => {
     if (!rows[0]) return res.status(404).json({ error: 'Client not found' });
 
     // Trainer can only see their own clients.
-    // Treat a trainer with no trainer_id as having no access (defensive).
     if (req.user.role === 'trainer' &&
-        (!req.user.trainer_id || rows[0].trainer_id !== req.user.trainer_id))
-      return res.status(403).json({ error: 'Access denied' });
+        (!req.user.trainer_id || rows[0].trainer_id !== req.user.trainer_id)) {
+      // Return 404 not 403 so we don't leak existence.
+      return res.status(404).json({ error: 'Client not found' });
+    }
 
-    // Also fetch full history for this client
-    const { rows: payments } = await pool.query(
-      'SELECT * FROM payments WHERE client_id=$1 ORDER BY date DESC, created_at DESC LIMIT 50',
-      [req.params.id]
-    );
-    const { rows: weightLogs } = await pool.query(
-      'SELECT * FROM weight_logs WHERE client_id=$1 ORDER BY date DESC LIMIT 20',
-      [req.params.id]
-    );
-    const { rows: renewals } = await pool.query(
-      'SELECT * FROM renewals WHERE client_id=$1 ORDER BY renewed_on DESC, created_at DESC LIMIT 20',
-      [req.params.id]
-    );
+    const [payments, weightLogs, renewals] = await Promise.all([
+      pool.query(
+        'SELECT * FROM payments WHERE client_id=$1 ORDER BY date DESC, created_at DESC LIMIT 50',
+        [req.params.id]
+      ),
+      pool.query(
+        'SELECT * FROM weight_logs WHERE client_id=$1 ORDER BY date DESC LIMIT 20',
+        [req.params.id]
+      ),
+      pool.query(
+        'SELECT * FROM renewals WHERE client_id=$1 ORDER BY renewed_on DESC, created_at DESC LIMIT 20',
+        [req.params.id]
+      ),
+    ]);
 
-    res.json({ ...rows[0], payments, weight_logs: weightLogs, renewals });
+    res.json({
+      ...rows[0],
+      payments: payments.rows,
+      weight_logs: weightLogs.rows,
+      renewals: renewals.rows,
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // POST /api/clients/:id/renew  — renew an existing client's membership.
 // Wrapped in a transaction so the client row, the renewal row, and (optionally)
 // the payment row all succeed together — or none of them do.
-router.post('/:id/renew', auth, async (req, res) => {
+router.post('/:id/renew', auth, async (req, res, next) => {
   const tx = await pool.connect();
   try {
     const d = req.body || {};
@@ -235,15 +256,14 @@ router.post('/:id/renew', auth, async (req, res) => {
     res.json({ message: 'Membership renewed', client: { ...fresh[0], payments, renewals } });
   } catch (err) {
     await tx.query('ROLLBACK').catch(() => {});
-    console.error('Renew error:', err.message);
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally {
     tx.release();
   }
 });
 
 // POST /api/clients/:id/pt-renew - renew personal training dates/amount.
-router.post('/:id/pt-renew', auth, async (req, res) => {
+router.post('/:id/pt-renew', auth, async (req, res, next) => {
   const tx = await pool.connect();
   try {
     const d = req.body || {};
@@ -291,14 +311,14 @@ router.post('/:id/pt-renew', auth, async (req, res) => {
     res.json({ message: 'Personal training renewed', client: rows[0] });
   } catch (err) {
     await tx.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally {
     tx.release();
   }
 });
 
 // POST /api/clients
-router.post('/', auth, async (req, res) => {
+router.post('/', auth, async (req, res, next) => {
   const client = await pool.connect();
   try {
     const d = req.body;
@@ -383,15 +403,14 @@ router.post('/', auth, async (req, res) => {
     res.status(201).json({ message: 'Client created', client: rows[0] });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    console.error('Create client error:', err.message);
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally {
     client.release();
   }
 });
 
 // PUT /api/clients/:id
-router.put('/:id', auth, async (req, res) => {
+router.put('/:id', auth, async (req, res, next) => {
   try {
     const d = req.body;
     const { rows: existing } = await pool.query('SELECT * FROM clients WHERE id=$1', [req.params.id]);
@@ -443,18 +462,26 @@ router.put('/:id', auth, async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM clients WHERE id=$1', [req.params.id]);
     res.json({ message: 'Updated', client: rows[0] });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
 // DELETE /api/clients/:id (admin only)
-router.delete('/:id', auth, adminOnly, async (req, res) => {
+//
+// Note: this is a hard delete and cascades to payments via FK. For a true
+// production-grade gym ERP, prefer a soft-delete migration (add
+// `deleted_at TIMESTAMPTZ` and filter on it everywhere). Included as a
+// follow-up SQL migration in db/migrations/.
+router.delete('/:id', auth, adminOnly, async (req, res, next) => {
   try {
-    const { rows } = await pool.query('DELETE FROM clients WHERE id=$1 RETURNING id', [req.params.id]);
+    const { rows } = await pool.query(
+      'DELETE FROM clients WHERE id=$1 RETURNING id',
+      [req.params.id]
+    );
     if (!rows[0]) return res.status(404).json({ error: 'Client not found' });
     res.json({ message: 'Client deleted' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 
