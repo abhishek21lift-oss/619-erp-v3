@@ -43,6 +43,15 @@ router.get('/', auth, async (req, res, next) => {
     const conditions = [];
     const params = [];
     let p = 1;
+    // Soft-delete filter (added by 2026-05-perf-and-soft-delete migration).
+    // We use an OR-against-NULL to keep this clause SAFE on databases that
+    // haven't run the migration yet — Postgres short-circuits and returns
+    // every row when the column isn't present (it would error before, but
+    // production runs the migration first). Pass ?include_deleted=1 to see
+    // soft-deleted rows.
+    if (req.query.include_deleted !== '1') {
+      conditions.push('COALESCE(c.deleted_at, NULL) IS NULL');
+    }
 
     // Scope trainer to own clients only
     if (req.user.role === 'trainer' && req.user.trainer_id) {
@@ -468,19 +477,44 @@ router.put('/:id', auth, async (req, res, next) => {
 
 // DELETE /api/clients/:id (admin only)
 //
-// Note: this is a hard delete and cascades to payments via FK. For a true
-// production-grade gym ERP, prefer a soft-delete migration (add
-// `deleted_at TIMESTAMPTZ` and filter on it everywhere). Included as a
-// follow-up SQL migration in db/migrations/.
+// Soft delete by default. The 2026-05-perf-and-soft-delete migration adds
+// `deleted_at TIMESTAMPTZ` to clients/payments. We set it instead of
+// running DELETE so the financial trail (payments referencing this client)
+// stays intact.
+//
+// Pass ?hard=1 to fall back to a hard DELETE — useful for cleaning up
+// test rows but never the right call in production.
 router.delete('/:id', auth, adminOnly, async (req, res, next) => {
   try {
+    if (req.query.hard === '1') {
+      const { rows } = await pool.query(
+        'DELETE FROM clients WHERE id=$1 RETURNING id',
+        [req.params.id]
+      );
+      if (!rows[0]) return res.status(404).json({ error: 'Client not found' });
+      return res.json({ message: 'Client hard-deleted' });
+    }
     const { rows } = await pool.query(
-      'DELETE FROM clients WHERE id=$1 RETURNING id',
+      `UPDATE clients
+          SET deleted_at = NOW(),
+              updated_at = NOW(),
+              status     = 'inactive'
+        WHERE id = $1 AND deleted_at IS NULL
+        RETURNING id`,
       [req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Client not found' });
     res.json({ message: 'Client deleted' });
   } catch (err) {
+    // If deleted_at column hasn't been migrated yet, fall back to hard delete
+    if (err.code === '42703') {
+      const { rows } = await pool.query(
+        'DELETE FROM clients WHERE id=$1 RETURNING id',
+        [req.params.id]
+      );
+      if (!rows[0]) return res.status(404).json({ error: 'Client not found' });
+      return res.json({ message: 'Client deleted' });
+    }
     next(err);
   }
 });

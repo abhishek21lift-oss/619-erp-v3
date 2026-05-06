@@ -14,7 +14,9 @@ async function auth(req, res, next) {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const { rows } = await pool.query(
-      'SELECT id, name, email, role, trainer_id, is_active FROM users WHERE id = $1',
+      // member_id is needed by requireSelfOrRole (v3 RBAC) — without it,
+      // members can never access /me-style routes scoped to their own id.
+      'SELECT id, name, email, role, trainer_id, member_id, is_active FROM users WHERE id = $1',
       [decoded.id]
     );
 

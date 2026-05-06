@@ -58,7 +58,11 @@ router.post('/login', async (req, res) => {
     let token;
     try {
       token = jwt.sign(
-        { id: user.id, email: user.email, role: user.role },
+        // The token only carries id; the auth middleware re-loads role,
+        // trainer_id, member_id, and is_active from the DB on every
+        // request so role changes / disablements take effect immediately
+        // without requiring re-login.
+        { id: user.id },
         process.env.JWT_SECRET,
         { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
       );
@@ -75,6 +79,7 @@ router.post('/login', async (req, res) => {
         email:      user.email,
         role:       user.role,
         trainer_id: user.trainer_id,
+        member_id:  user.member_id,
       },
     });
 
@@ -128,15 +133,24 @@ router.post('/change-password', auth, changePasswordHandler);
 
 // POST /api/auth/create-user  (admin only)
 // Also accepts /users for compatibility with older frontend builds
+const ALLOWED_ROLES = ['admin', 'manager', 'trainer', 'reception', 'member'];
+
 async function createUserHandler(req, res) {
   try {
-    const { name, email, password, role = 'trainer', trainer_id } = req.body;
+    const { name, email, password, role = 'trainer', trainer_id, member_id } = req.body;
     if (!name || !email || !password)
       return res.status(400).json({ error: 'Name, email and password required' });
     if (password.length < 6)
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
-    if (!['admin', 'trainer'].includes(role))
-      return res.status(400).json({ error: 'Role must be admin or trainer' });
+    if (!ALLOWED_ROLES.includes(role))
+      return res.status(400).json({ error: `Role must be one of: ${ALLOWED_ROLES.join(', ')}` });
+
+    // If a trainer_id is supplied, make sure it actually exists. Otherwise
+    // we'd happily create an orphaned link that breaks the dashboard later.
+    if (trainer_id) {
+      const { rows: t } = await pool.query('SELECT 1 FROM trainers WHERE id = $1', [trainer_id]);
+      if (!t.length) return res.status(400).json({ error: 'trainer_id does not match an existing trainer' });
+    }
 
     const { rows: exists } = await pool.query(
       'SELECT id FROM users WHERE LOWER(email) = LOWER($1)', [email.trim()]
@@ -146,8 +160,8 @@ async function createUserHandler(req, res) {
     const hashed = await bcrypt.hash(password, 10);
     const id = uuid();
     await pool.query(
-      'INSERT INTO users (id, name, email, password, role, trainer_id) VALUES ($1,$2,$3,$4,$5,$6)',
-      [id, name.trim(), email.toLowerCase().trim(), hashed, role, trainer_id || null]
+      'INSERT INTO users (id, name, email, password, role, trainer_id, member_id) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [id, name.trim(), email.toLowerCase().trim(), hashed, role, trainer_id || null, member_id || null]
     );
     res.status(201).json({ message: 'User created', user: { id, name, email: email.toLowerCase(), role } });
   } catch (err) {

@@ -23,13 +23,24 @@ CREATE TABLE IF NOT EXISTS users (
   email       TEXT UNIQUE NOT NULL,
   password    TEXT NOT NULL,
   role        TEXT NOT NULL DEFAULT 'trainer'
-                CHECK (role IN ('admin','trainer')),
+                -- v2 used (admin,trainer). v3 modules also issue tokens for
+                -- manager / reception / member, so the constraint must allow
+                -- those roles too — otherwise the v3 server can never insert
+                -- a user with one of the new roles.
+                CHECK (role IN ('admin','manager','trainer','reception','member')),
   trainer_id  TEXT,          -- links to trainers.id when role='trainer'
+  member_id   TEXT,          -- links to clients.id when role='member' (v3)
   is_active   BOOLEAN NOT NULL DEFAULT TRUE,
   last_login  TIMESTAMPTZ,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Allow re-running on existing DBs to widen the constraint and add member_id.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD  CONSTRAINT users_role_check
+  CHECK (role IN ('admin','manager','trainer','reception','member'));
+ALTER TABLE users ADD COLUMN IF NOT EXISTS member_id TEXT;
 
 -- ────────────────────────────────────────────────────────────────────
 --  TRAINERS
@@ -237,12 +248,16 @@ CREATE INDEX IF NOT EXISTS idx_users_email        ON users(email);
 -- ════════════════════════════════════════════════════════════════════
 
 -- Admin user (bcrypt hash of "admin@619" with cost 10)
+-- IMPORTANT: bcrypt hashes are case-sensitive. The hash on INSERT and
+-- ON CONFLICT must match exactly, otherwise re-running the migration
+-- silently rewrites the password to a hash that doesn't validate.
+-- Always re-seed with `node src/db/seed.js` after running this file.
 INSERT INTO users (id, name, email, password, role) VALUES
   ('usr-admin-001', 'Admin', 'admin@619fitness.com',
    '$2a$10$rQnuz5yEoaConv/dSmMbXuO3lv5Y5KQB.eO4ClkQ7i8M/7/ZPNqGO',
    'admin')
 ON CONFLICT (email) DO UPDATE SET
-  password = '$2a$10$rQnuz5yEoaconv/dSmMbXuO3lv5Y5KQB.eO4ClkQ7i8M/7/ZPNqGO',
+  password = '$2a$10$rQnuz5yEoaConv/dSmMbXuO3lv5Y5KQB.eO4ClkQ7i8M/7/ZPNqGO',
   updated_at = NOW();
 
 -- Demo trainer users (password: trainer@619)

@@ -1,14 +1,13 @@
 # 619 Fitness — Aurora Operating System
 
 A modern gym/fitness management ERP. Members, trainers, classes, payments,
-attendance and reporting in one place. Built as a Next.js 14 frontend
+attendance and reporting in one place. Built as a Next.js 16 frontend
 (glassmorphism aurora UI) over an Express + Supabase Postgres backend.
 
 ```
 619-erp-v2/
-├── frontend/         Next.js 14 App Router · Tailwind · TypeScript
-├── backend/          Express + Postgres API
-│   └── 619-erp-backend/
+├── frontend/         Next.js 16 App Router · React 18 · Tailwind · TypeScript
+├── backend/          Express 4 + Postgres API
 ├── db/migrations/    Supabase / Postgres schema and migrations
 ├── docs/             Project docs (live + archived)
 │   └── archive/      Older one-off docs kept for history
@@ -26,11 +25,11 @@ attendance and reporting in one place. Built as a Next.js 14 frontend
 
 | Layer       | Tech                                                           |
 | ----------- | -------------------------------------------------------------- |
-| Frontend    | Next.js 14 (App Router) · React 18 · TypeScript · Tailwind 3   |
+| Frontend    | Next.js 16 (App Router) · React 18 · TypeScript · Tailwind 3   |
 | UI          | Custom **Aurora glass** design system (see `globals.css`)      |
 | Backend     | Express 4 · `pg` · `helmet` · `cors` · `express-rate-limit`    |
 | Database    | Supabase Postgres                                              |
-| Auth        | JWT (HS256) with 7-day expiry                                  |
+| Auth        | JWT (HS256) with 7-day expiry, opaque token (id-only payload)  |
 | Hosting     | Vercel (frontend) · Render (backend) · Supabase (db)           |
 
 ---
@@ -47,7 +46,7 @@ attendance and reporting in one place. Built as a Next.js 14 frontend
 ### Backend
 
 ```bash
-cd backend/619-erp-backend
+cd backend
 cp .env.example .env        # then edit .env with real values
 npm install
 npm run dev                 # http://localhost:5000
@@ -120,19 +119,30 @@ shutdown on SIGTERM/SIGINT, hidden 5xx error messages in production.
 
 ## Deployment notes
 
-- **Backend (Render):** repository points to `backend/619-erp-backend`,
+- **Backend (Render):** repository points to `backend/`,
   `npm start` is the start command, env vars set in the Render dashboard.
 - **Frontend (Vercel):** root directory `frontend/`,
   `NEXT_PUBLIC_API_URL` points at the Render API URL.
-- **Database (Supabase):** apply `db/migrations/supabase-schema.sql`,
-  then `supabase-migration-v3.sql`. `supabase-schema-v3-recovery.sql`
-  is a recovery script — only use it if you know why.
+- **Database (Supabase):** apply migrations in this order:
+  1. `db/migrations/supabase-schema.sql` (v2 base)
+  2. `db/migrations/supabase-migration-v3.sql` (additive v3 — subscriptions, follow-ups, etc.)
+  3. `db/migrations/supabase-v3-migration.sql` (additive v3 — plans, trials, enquiries)
+  4. `db/migrations/supabase-schema-v3.sql` (additive v3 SaaS — members, bookings, classes, audit log)
+  5. `db/migrations/face-checkin.sql` (face descriptors + log)
+  6. `db/migrations/2026-05-perf-and-soft-delete.sql` (indexes + soft-delete)
+
+  Run `supabase-schema-v3-recovery.sql` only if step 4 stalls on missing
+  trainers — it re-seeds the demo trainers and class schedules.
+
+  Steps 4–6 are required if you intend to run `npm run start:v3` (the
+  v3 server / member portal modules). The v2 server (`npm start`) only
+  needs steps 1–3 plus 5 if you want face check-in.
 
 ---
 
 ## What's new in v3
 
-- Frontend upgraded **Next 9 → Next 14**, App Router, strict TypeScript
+- Frontend upgraded **Next 9 → Next 16**, App Router, strict TypeScript
 - Brand-new **Aurora glassmorphism UI** — completely re-themed without
   rewriting any page logic, by replacing `globals.css`
 - Root folder cleaned up — 15+ scattered scripts and ad-hoc deploy docs

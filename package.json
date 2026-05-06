@@ -1,4 +1,19 @@
 {
+  "name": "619-erp-v2",
+  "version": "3.0.0",
+  "private": true,
+  "description": "619 Fitness Studio ERP — monorepo workspace (frontend + backend)",
+  "scripts": {
+    "install:all":         "npm --prefix frontend install && npm --prefix backend install",
+    "dev:frontend":        "npm --prefix frontend run dev",
+    "dev:backend":         "npm --prefix backend  run dev",
+    "build:frontend":      "npm --prefix frontend run build",
+    "lint:frontend":       "npm --prefix frontend run lint",
+    "typecheck:frontend":  "npm --prefix frontend run typecheck",
+    "syntax:backend":      "npm --prefix backend  run lint:syntax",
+    "start:backend":       "npm --prefix backend  run start",
+    "start:backend:v3":    "npm --prefix backend  run start:v3"
+  },
   "devDependencies": {
     "eslint": "^9.39.4"
   }

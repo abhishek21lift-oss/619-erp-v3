@@ -30,30 +30,48 @@ ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_status_check;
 ALTER TABLE clients ADD CONSTRAINT clients_status_check
   CHECK (status IN ('active','expired','frozen','inactive','trial'));
 
--- ── 2. PLANS TABLE — replace minimal schema with full one ───────────────
--- Drop old simple plans table and recreate with full structure
-DROP TABLE IF EXISTS plans CASCADE;
-CREATE TABLE plans (
+-- ── 2. PLANS TABLE — extend, do NOT drop ────────────────────────────────
+--
+-- The previous version of this migration ran `DROP TABLE plans CASCADE`,
+-- which (a) destroys every existing plan and any FK-dependent rows on a
+-- live install and (b) violates the README's "additive only" promise.
+--
+-- Instead we ADD the new v3 columns to the existing plans table. The
+-- legacy `duration INTEGER` column stays in place so old code keeps
+-- working; new code uses `duration_label` for the v3 string buckets.
+CREATE TABLE IF NOT EXISTS plans (
   id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
-  kind             TEXT NOT NULL DEFAULT 'Membership'
-                     CHECK (kind IN ('Membership','PT')),
   name             TEXT NOT NULL,
-  duration         TEXT NOT NULL DEFAULT 'Monthly'
-                     CHECK (duration IN ('Monthly','Quarterly','Half Yearly','Yearly')),
-  base_amount      NUMERIC(10,2) NOT NULL DEFAULT 0,
-  discount         NUMERIC(10,2) NOT NULL DEFAULT 0,
-  final_amount     NUMERIC(10,2) NOT NULL DEFAULT 0,
-  sessions_per_week INTEGER,
-  features         JSONB DEFAULT '[]',
-  popular          BOOLEAN DEFAULT FALSE,
+  duration         INTEGER,
+  price            NUMERIC(10,2),
+  description      TEXT,
   is_active        BOOLEAN DEFAULT TRUE,
-  gym_id           TEXT,
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Seed default plans
-INSERT INTO plans (id, kind, name, duration, base_amount, discount, final_amount, sessions_per_week, features, popular) VALUES
+ALTER TABLE plans
+  ADD COLUMN IF NOT EXISTS kind             TEXT NOT NULL DEFAULT 'Membership',
+  ADD COLUMN IF NOT EXISTS duration_label   TEXT NOT NULL DEFAULT 'Monthly',
+  ADD COLUMN IF NOT EXISTS base_amount      NUMERIC(10,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS discount         NUMERIC(10,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS final_amount     NUMERIC(10,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS sessions_per_week INTEGER,
+  ADD COLUMN IF NOT EXISTS features         JSONB DEFAULT '[]',
+  ADD COLUMN IF NOT EXISTS popular          BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS gym_id           TEXT,
+  ADD COLUMN IF NOT EXISTS updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+ALTER TABLE plans DROP CONSTRAINT IF EXISTS plans_kind_check;
+ALTER TABLE plans ADD  CONSTRAINT plans_kind_check
+  CHECK (kind IN ('Membership','PT'));
+
+ALTER TABLE plans DROP CONSTRAINT IF EXISTS plans_duration_label_check;
+ALTER TABLE plans ADD  CONSTRAINT plans_duration_label_check
+  CHECK (duration_label IN ('Monthly','Quarterly','Half Yearly','Yearly'));
+
+-- Seed default plans (uses duration_label for v3 string buckets;
+-- duration is left NULL for the v3 rows because the legacy column is INTEGER days).
+INSERT INTO plans (id, kind, name, duration_label, base_amount, discount, final_amount, sessions_per_week, features, popular) VALUES
   ('plan-m-1', 'Membership', 'Monthly Membership',     'Monthly',     2500,  0,    2500,  NULL, '["Full gym access","Locker facility","Free trial class"]', FALSE),
   ('plan-m-2', 'Membership', 'Quarterly Membership',   'Quarterly',   7000,  500,  6500,  NULL, '["Full gym access","Locker","1 Body composition test","Free diet consult"]', TRUE),
   ('plan-m-3', 'Membership', 'Half-Yearly Membership', 'Half Yearly', 13000, 1500, 11500, NULL, '["Full gym access","Locker","Body comp test","Diet consult","Group class access"]', FALSE),

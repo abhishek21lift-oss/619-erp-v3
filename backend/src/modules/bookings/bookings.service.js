@@ -37,9 +37,12 @@ async function book({ session_id, member_id }, ctx) {
       throw new HttpError(409, 'ALREADY_BOOKED', 'You already have a booking for this session');
     }
 
-    // 3. Check active membership
+    // 3. Check active membership.
+    // Qualify every column with mm./p. — `id`, `classes_used`, `plan_id` exist
+    // on both tables and Postgres throws "column reference is ambiguous" if
+    // they're left unqualified.
     const mm = await client.query(
-      `SELECT id, classes_used, plan_id, p.included_classes
+      `SELECT mm.id, mm.classes_used, mm.plan_id, p.included_classes
        FROM member_memberships mm
        JOIN plans p ON p.id = mm.plan_id
        WHERE mm.member_id = $1 AND mm.status = 'active'

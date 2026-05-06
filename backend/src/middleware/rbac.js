@@ -33,22 +33,32 @@ function requireSelfOrRole(...roles) {
   };
 }
 
-// For trainers: only allow access to assigned members
-async function requireTrainerOwnership(pool, paramName = 'id') {
+// For trainers: only allow access to assigned members.
+//
+// IMPORTANT: this is a middleware FACTORY, so it must be a synchronous
+// function that returns the middleware. The previous version was declared
+// `async function`, which made `requireTrainerOwnership(pool)` resolve to
+// a Promise — Express then tried to use the Promise as middleware and
+// every request hung. Using a plain function fixes that.
+function requireTrainerOwnership(pool, paramName = 'id') {
   return async (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: { code: 'UNAUTH' } });
     if (req.user.role === 'admin') return next();
     if (req.user.role !== 'trainer') return res.status(403).json({ error: { code: 'FORBIDDEN' } });
 
     const memberId = req.params[paramName];
-    const { rows } = await pool.query(
-      `SELECT 1 FROM members WHERE id = $1 AND primary_trainer_id = $2 LIMIT 1`,
-      [memberId, req.user.trainer_id]
-    );
-    if (rows.length === 0) {
-      return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Member not assigned to you' } });
+    try {
+      const { rows } = await pool.query(
+        `SELECT 1 FROM members WHERE id = $1 AND primary_trainer_id = $2 LIMIT 1`,
+        [memberId, req.user.trainer_id]
+      );
+      if (rows.length === 0) {
+        return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Member not assigned to you' } });
+      }
+      next();
+    } catch (err) {
+      next(err);
     }
-    next();
   };
 }
 

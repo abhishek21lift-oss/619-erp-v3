@@ -41,7 +41,14 @@ async function seed() {
   await pool.end();
 }
 
-seed().catch(err => {
-  console.error('Seed failed:', err.message);
-  process.exit(1);
-});
+// Only auto-run when invoked directly (`node src/db/seed.js`).
+// Without this guard, ANY `require('./db/seed')` triggers the seed —
+// a dangerous footgun in production.
+if (require.main === module) {
+  seed().catch(err => {
+    console.error('Seed failed:', err.message);
+    process.exit(1);
+  });
+}
+
+module.exports = { seed };

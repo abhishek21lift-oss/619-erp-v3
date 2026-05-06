@@ -14,9 +14,13 @@ CREATE INDEX IF NOT EXISTS idx_clients_face_enrolled
   WHERE face_descriptor IS NOT NULL;
 
 -- 2) Per-event check-in log (success / unknown / expired / denied)
+--
+-- NOTE on types: clients.id is TEXT (gen_random_uuid()::TEXT), not UUID,
+-- so client_id must be TEXT to satisfy the FK. Likewise we default id to
+-- a TEXT-shaped UUID so callers that omit it still get a value.
 CREATE TABLE IF NOT EXISTS face_checkin_logs (
-  id          UUID        PRIMARY KEY,
-  client_id   UUID        REFERENCES clients(id) ON DELETE SET NULL,
+  id          TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+  client_id   TEXT        REFERENCES clients(id) ON DELETE SET NULL,
   status      TEXT        NOT NULL CHECK (status IN ('success','unknown','expired','denied','error')),
   distance    DOUBLE PRECISION,
   ip          TEXT,

@@ -20,6 +20,10 @@ router.get('/', auth, async (req, res) => {
     if (client_id) { conditions.push(`p.client_id = $${p++}`); params.push(client_id); }
     if (from)      { conditions.push(`p.date >= $${p++}`);     params.push(from); }
     if (to)        { conditions.push(`p.date <= $${p++}`);     params.push(to); }
+    // Hide soft-deleted payments unless caller explicitly asks for them.
+    if (req.query.include_deleted !== '1') {
+      conditions.push(`p.deleted_at IS NULL`);
+    }
 
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
@@ -116,24 +120,43 @@ router.post('/', auth, async (req, res) => {
 });
 
 // DELETE /api/payments/:id (admin only)
+//
+// Soft delete by default (sets deleted_at). The balance reversal still runs
+// so the client's paid/balance figures stay correct. Pass ?hard=1 to fully
+// remove the row — only do this for tests.
 router.delete('/:id', auth, adminOnly, async (req, res) => {
   const tx = await pool.connect();
   try {
     await tx.query('BEGIN');
-    const { rows } = await tx.query(
-      'DELETE FROM payments WHERE id=$1 RETURNING *', [req.params.id]
-    );
-    if (!rows[0]) {
+
+    let payment;
+    if (req.query.hard === '1') {
+      const { rows } = await tx.query(
+        'DELETE FROM payments WHERE id=$1 RETURNING *', [req.params.id]
+      );
+      payment = rows[0];
+    } else {
+      const { rows } = await tx.query(
+        `UPDATE payments
+            SET deleted_at = NOW(), updated_at = NOW()
+          WHERE id = $1 AND deleted_at IS NULL
+          RETURNING *`, [req.params.id]
+      );
+      payment = rows[0];
+    }
+
+    if (!payment) {
       await tx.query('ROLLBACK');
       return res.status(404).json({ error: 'Not found' });
     }
+
     // Reverse the balance change atomically
     await tx.query(`
       UPDATE clients
       SET paid_amount = GREATEST(0, paid_amount - $1),
           balance_amount = balance_amount + $1,
           updated_at = NOW()
-      WHERE id = $2`, [rows[0].amount, rows[0].client_id]
+      WHERE id = $2`, [payment.amount, payment.client_id]
     );
     await tx.query('COMMIT');
     res.json({ message: 'Payment deleted' });

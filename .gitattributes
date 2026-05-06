@@ -1,0 +1,32 @@
+# Normalise line endings so Windows / macOS / Linux contributors don't
+# spam diffs with CRLF↔LF noise. Commit everything as LF; on checkout,
+# Git converts to the platform default unless the file is binary.
+* text=auto eol=lf
+
+# Force LF on shell / web files even on Windows (interpreters require LF)
+*.sh    text eol=lf
+*.js    text eol=lf
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.jsx   text eol=lf
+*.json  text eol=lf
+*.sql   text eol=lf
+*.css   text eol=lf
+*.html  text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# Force CRLF on Windows-only batch files (otherwise cmd.exe chokes)
+*.bat   text eol=crlf
+*.ps1   text eol=crlf
+
+# Binary — never diff or normalise
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.woff  binary
+*.woff2 binary
