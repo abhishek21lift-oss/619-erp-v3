@@ -458,7 +458,7 @@ UPDATE clients
  WHERE first_name IS NULL OR last_name IS NULL;
 
 UPDATE clients
-   SET member_code = COALESCE(member_code, 'YDL-' || LPAD(EXTRACT(EPOCH FROM created_at)::BIGINT::TEXT, 8, '0') || '-' || LEFT(id, 4))
+   SET member_code = COALESCE(member_code, 'SIX19-' || LPAD(EXTRACT(EPOCH FROM created_at)::BIGINT::TEXT, 8, '0') || '-' || LEFT(id, 4))
  WHERE member_code IS NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_member_code ON clients(member_code) WHERE member_code IS NOT NULL;
