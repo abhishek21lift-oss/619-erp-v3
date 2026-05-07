@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>619 Fitness — v3 Wireframes</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  .device {
+    width: 380px; height: 760px; border-radius: 36px; overflow: hidden;
+    border: 8px solid #0f172a; box-shadow: 0 30px 60px -20px rgba(0,0,0,.3);
+    background: white; flex-shrink: 0;
+  }
+  .device-content { height: 100%; overflow-y: auto; }
+  .gradient-orange { background: linear-gradient(135deg, #FF4500 0%, #F472B6 100%); }
+  .gradient-dark { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); }
+</style>
+</head>
+<body class="bg-slate-100 p-8 min-h-screen">
+
+<div class="max-w-7xl mx-auto">
+  <header class="mb-8 text-center">
+    <h1 class="text-4xl font-bold text-slate-900">619 Fitness — v3 Wireframes</h1>
+    <p class="text-slate-600 mt-2">Glofox-class SaaS gym management. Click between previews below.</p>
+    <div class="inline-flex gap-2 mt-4 bg-white p-1 rounded-lg shadow-sm">
+      <button onclick="show('admin')" id="t-admin" class="px-4 py-2 rounded-md text-sm font-medium bg-slate-900 text-white">Admin Dashboard</button>
+      <button onclick="show('trainer')" id="t-trainer" class="px-4 py-2 rounded-md text-sm font-medium text-slate-600">Trainer Dashboard</button>
+      <button onclick="show('member')" id="t-member" class="px-4 py-2 rounded-md text-sm font-medium text-slate-600">Member Portal</button>
+      <button onclick="show('booking')" id="t-booking" class="px-4 py-2 rounded-md text-sm font-medium text-slate-600">Class Booking</button>
+    </div>
+  </header>
+
+  <!-- ADMIN DASHBOARD -->
+  <section id="admin" class="view bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+    <div class="grid" style="grid-template-columns: 240px 1fr;">
+      <!-- Sidebar -->
+      <aside class="bg-white border-r border-slate-200 p-4">
+        <div class="flex items-center gap-2 mb-6">
+          <div class="w-9 h-9 rounded-xl gradient-orange text-white flex items-center justify-center font-bold">619</div>
+          <div><div class="font-bold">619 Fitness</div><div class="text-xs text-slate-500">Admin</div></div>
+        </div>
+        <nav class="space-y-1 text-sm">
+          <a class="flex items-center gap-3 px-3 py-2 rounded-lg bg-orange-50 text-orange-700 font-medium">📊 Dashboard</a>
+          <a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-50">👥 Members</a>
+          <a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-50">🏋️ Trainers</a>
+          <a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-50">📅 Classes</a>
+          <a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-50">📋 Bookings</a>
+          <a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-50">💳 Payments</a>
+          <a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-50">📈 Reports</a>
+          <a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-50">⚙️ Settings</a>
+        </nav>
+      </aside>
+      <!-- Main -->
+      <div class="bg-slate-50 min-h-[700px]">
+        <div class="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between">
+          <input class="px-3 py-1.5 text-sm bg-slate-100 rounded-lg w-72" placeholder="Search members, payments…" />
+          <div class="flex items-center gap-3">
+            <span class="relative">🔔<span class="absolute -top-1 -right-1 text-[10px] bg-orange-500 text-white rounded-full w-4 h-4 flex items-center justify-center">3</span></span>
+            <select class="text-xs bg-slate-100 rounded-lg px-2 py-1.5"><option>Main Branch</option></select>
+            <div class="w-8 h-8 rounded-full gradient-dark text-white flex items-center justify-center text-sm">A</div>
+          </div>
+        </div>
+        <div class="p-6">
+          <h2 class="text-2xl font-bold">Good morning, Admin 👋</h2>
+          <p class="text-sm text-slate-500 mb-5">Here's what's happening at your gym today.</p>
+
+          <div class="grid grid-cols-4 gap-3 mb-5">
+            <div class="bg-white rounded-2xl border border-slate-200 p-4 relative overflow-hidden">
+              <div class="absolute top-0 left-0 w-1 h-full gradient-orange"></div>
+              <div class="text-xs text-slate-500 uppercase">Total Members</div>
+              <div class="text-2xl font-bold mt-1">248</div>
+              <div class="flex justify-between text-xs mt-2"><span class="text-slate-500">232 active · 16 expired</span><span class="text-emerald-600 font-semibold">+12</span></div>
+            </div>
+            <div class="bg-white rounded-2xl border border-slate-200 p-4 relative overflow-hidden">
+              <div class="absolute top-0 left-0 w-1 h-full" style="background:linear-gradient(180deg,#10b981,#06b6d4)"></div>
+              <div class="text-xs text-slate-500 uppercase">Revenue (MTD)</div>
+              <div class="text-2xl font-bold mt-1">₹4,28,500</div>
+              <div class="flex justify-between text-xs mt-2"><span class="text-slate-500">Year: ₹38.2L</span><span class="text-emerald-600 font-semibold">+8%</span></div>
+            </div>
+            <div class="bg-white rounded-2xl border border-slate-200 p-4 relative overflow-hidden">
+              <div class="absolute top-0 left-0 w-1 h-full" style="background:linear-gradient(180deg,#f59e0b,#f97316)"></div>
+              <div class="text-xs text-slate-500 uppercase">Pending Dues</div>
+              <div class="text-2xl font-bold mt-1">₹38,000</div>
+              <div class="flex justify-between text-xs mt-2"><span class="text-slate-500">24 members</span><span class="text-emerald-600 font-semibold">-5%</span></div>
+            </div>
+            <div class="bg-white rounded-2xl border border-slate-200 p-4 relative overflow-hidden">
+              <div class="absolute top-0 left-0 w-1 h-full" style="background:linear-gradient(180deg,#8b5cf6,#d946ef)"></div>
+              <div class="text-xs text-slate-500 uppercase">Today's Attendance</div>
+              <div class="text-2xl font-bold mt-1">87</div>
+              <div class="text-xs mt-2 text-slate-500">8 expiring this week</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-3 mb-5">
+            <div class="col-span-2 bg-white rounded-2xl border border-slate-200 p-5">
+              <div class="flex justify-between items-center mb-4"><h3 class="font-semibold">Revenue (last 6 months)</h3><div class="text-xs flex gap-2"><button class="px-3 py-1 rounded-full bg-slate-900 text-white">6M</button><button class="px-3 py-1 rounded-full text-slate-500">1Y</button></div></div>
+              <div class="h-44 flex items-end gap-2">
+                <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full gradient-orange rounded-t-lg" style="height:40%"></div><span class="text-[10px] text-slate-500">Nov</span></div>
+                <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full gradient-orange rounded-t-lg" style="height:55%"></div><span class="text-[10px] text-slate-500">Dec</span></div>
+                <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full gradient-orange rounded-t-lg" style="height:65%"></div><span class="text-[10px] text-slate-500">Jan</span></div>
+                <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full gradient-orange rounded-t-lg" style="height:78%"></div><span class="text-[10px] text-slate-500">Feb</span></div>
+                <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full gradient-orange rounded-t-lg" style="height:90%"></div><span class="text-[10px] text-slate-500">Mar</span></div>
+                <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full gradient-orange rounded-t-lg" style="height:100%"></div><span class="text-[10px] text-slate-500">Apr</span></div>
+              </div>
+            </div>
+            <div class="bg-white rounded-2xl border border-slate-200 p-5">
+              <h3 class="font-semibold mb-3">Top Trainers</h3>
+              <ul class="space-y-2">
+                <li class="flex items-center gap-3 p-2"><div class="w-9 h-9 rounded-full gradient-orange text-white flex items-center justify-center text-sm font-semibold">R</div><div class="flex-1"><div class="text-sm font-medium">Riya Sharma</div><div class="text-xs text-slate-500">14 active</div></div><div class="text-sm font-semibold text-emerald-600">₹85k</div></li>
+                <li class="flex items-center gap-3 p-2"><div class="w-9 h-9 rounded-full bg-violet-500 text-white flex items-center justify-center text-sm font-semibold">A</div><div class="flex-1"><div class="text-sm font-medium">Abhishek Gupta</div><div class="text-xs text-slate-500">12 active</div></div><div class="text-sm font-semibold text-emerald-600">₹72k</div></li>
+                <li class="flex items-center gap-3 p-2"><div class="w-9 h-9 rounded-full bg-emerald-500 text-white flex items-center justify-center text-sm font-semibold">R</div><div class="flex-1"><div class="text-sm font-medium">Rajat Singh</div><div class="text-xs text-slate-500">9 active</div></div><div class="text-sm font-semibold text-emerald-600">₹61k</div></li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-3">
+            <div class="col-span-2 bg-white rounded-2xl border border-slate-200 p-5">
+              <h3 class="font-semibold mb-3">Recent Payments</h3>
+              <table class="w-full text-sm">
+                <thead class="text-xs text-slate-500"><tr><th class="py-2 text-left font-normal">Client</th><th class="text-left font-normal">Amount</th><th class="text-left font-normal">Method</th><th class="text-left font-normal">Date</th></tr></thead>
+                <tbody>
+                  <tr class="border-t border-slate-100"><td class="py-2 font-medium">Priya Patel</td><td class="text-emerald-600 font-semibold">₹17,000</td><td><span class="text-xs px-2 py-0.5 rounded-full bg-slate-100">UPI</span></td><td class="text-slate-500">2026-04-29</td></tr>
+                  <tr class="border-t border-slate-100"><td class="py-2 font-medium">Rohit Verma</td><td class="text-emerald-600 font-semibold">₹5,000</td><td><span class="text-xs px-2 py-0.5 rounded-full bg-slate-100">CASH</span></td><td class="text-slate-500">2026-04-28</td></tr>
+                  <tr class="border-t border-slate-100"><td class="py-2 font-medium">Anita Singh</td><td class="text-emerald-600 font-semibold">₹16,000</td><td><span class="text-xs px-2 py-0.5 rounded-full bg-slate-100">CARD</span></td><td class="text-slate-500">2026-04-28</td></tr>
+                  <tr class="border-t border-slate-100"><td class="py-2 font-medium">Vikram Joshi</td><td class="text-emerald-600 font-semibold">₹16,500</td><td><span class="text-xs px-2 py-0.5 rounded-full bg-slate-100">UPI</span></td><td class="text-slate-500">2026-04-27</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="gradient-orange rounded-2xl text-white p-5">
+              <p class="text-xs uppercase tracking-wider opacity-80">Expiring soon</p>
+              <p class="text-4xl font-bold mt-2">8</p>
+              <p class="text-sm opacity-90 mt-1">members in the next 7 days</p>
+              <button class="mt-4 w-full bg-white/20 rounded-lg py-2 text-sm font-medium">Send renewal nudges →</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TRAINER DASHBOARD -->
+  <section id="trainer" class="view hidden bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+    <div class="max-w-3xl mx-auto">
+      <div class="flex items-center gap-3 mb-5">
+        <div class="w-12 h-12 rounded-full gradient-orange text-white flex items-center justify-center font-semibold">R</div>
+        <div><p class="text-xs text-slate-500">Trainer</p><h2 class="font-bold">Riya Sharma</h2></div>
+      </div>
+
+      <div class="rounded-2xl gradient-dark text-white p-6 relative overflow-hidden mb-5">
+        <p class="text-xs uppercase tracking-wider opacity-80">April 2026 earnings</p>
+        <div class="text-4xl font-bold mt-2">₹37,450</div>
+        <div class="mt-4 grid grid-cols-2 gap-3 max-w-sm">
+          <div class="bg-white/10 rounded-lg p-3"><div class="text-xs opacity-80">Base salary</div><div class="text-lg font-semibold">₹25,000</div></div>
+          <div class="bg-white/10 rounded-lg p-3"><div class="text-xs opacity-80">Incentive</div><div class="text-lg font-semibold">₹12,450</div></div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-4 gap-3 mb-5">
+        <div class="bg-white border border-slate-200 rounded-xl p-3"><div class="text-xs text-slate-500">Active clients</div><div class="text-xl font-bold mt-1">14 <span class="text-xs text-emerald-600 font-medium">+2</span></div></div>
+        <div class="bg-white border border-slate-200 rounded-xl p-3"><div class="text-xs text-slate-500">Sessions/week</div><div class="text-xl font-bold mt-1">22 <span class="text-xs text-emerald-600 font-medium">+5</span></div></div>
+        <div class="bg-white border border-slate-200 rounded-xl p-3"><div class="text-xs text-slate-500">Avg attendance</div><div class="text-xl font-bold mt-1">86% <span class="text-xs text-emerald-600 font-medium">+4%</span></div></div>
+        <div class="bg-white border border-slate-200 rounded-xl p-3"><div class="text-xs text-slate-500">Retention</div><div class="text-xl font-bold mt-1">92% <span class="text-xs text-emerald-600 font-medium">+1%</span></div></div>
+      </div>
+
+      <h3 class="font-semibold mb-2">Today's schedule</h3>
+      <ul class="space-y-2">
+        <li class="flex items-center gap-4 bg-white border border-slate-200 rounded-xl p-4"><div class="text-center w-14 shrink-0"><div class="text-xs text-slate-500">07:00</div><div class="text-xs text-slate-400">AM</div></div><div class="w-1 h-12 bg-violet-500 rounded-full"></div><div class="flex-1"><div class="font-semibold">Yoga Flow (15 booked)</div><div class="text-xs text-slate-500">Group class</div></div><span class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">completed</span></li>
+        <li class="flex items-center gap-4 bg-white border border-slate-200 rounded-xl p-4"><div class="text-center w-14 shrink-0"><div class="text-xs text-slate-500">10:00</div><div class="text-xs text-slate-400">AM</div></div><div class="w-1 h-12 bg-orange-500 rounded-full"></div><div class="flex-1"><div class="font-semibold">PT Session</div><div class="text-xs text-slate-500">with Priya Patel</div></div><span class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">completed</span></li>
+        <li class="flex items-center gap-4 bg-white border border-slate-200 rounded-xl p-4"><div class="text-center w-14 shrink-0"><div class="text-xs text-slate-500">17:30</div><div class="text-xs text-slate-400">PM</div></div><div class="w-1 h-12 bg-orange-500 rounded-full"></div><div class="flex-1"><div class="font-semibold">PT Session</div><div class="text-xs text-slate-500">with Vikram Joshi</div></div><span class="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">upcoming</span></li>
+        <li class="flex items-center gap-4 bg-white border border-slate-200 rounded-xl p-4"><div class="text-center w-14 shrink-0"><div class="text-xs text-slate-500">19:00</div><div class="text-xs text-slate-400">PM</div></div><div class="w-1 h-12 bg-violet-500 rounded-full"></div><div class="flex-1"><div class="font-semibold">Yoga Flow (12 booked)</div><div class="text-xs text-slate-500">Group class</div></div><span class="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">upcoming</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- MEMBER PORTAL -->
+  <section id="member" class="view hidden flex justify-center">
+    <div class="device">
+      <div class="device-content bg-slate-50">
+        <header class="bg-white px-4 py-4 flex justify-between items-center border-b border-slate-200">
+          <div><p class="text-xs text-slate-500">Hi 👋</p><h1 class="font-bold">Priya Patel</h1></div>
+          <div class="w-10 h-10 rounded-full gradient-orange text-white flex items-center justify-center font-semibold">P</div>
+        </header>
+        <main class="p-4 space-y-4">
+          <div class="rounded-2xl gradient-orange text-white p-5">
+            <p class="text-xs uppercase opacity-80">Current Plan</p>
+            <h2 class="text-2xl font-bold mt-1">Half Yearly</h2>
+            <div class="mt-4">
+              <div class="flex justify-between text-xs opacity-90"><span>Days remaining</span><span class="font-medium">47 days</span></div>
+              <div class="mt-1 h-2 bg-white/20 rounded-full overflow-hidden"><div class="h-full bg-white rounded-full" style="width:74%"></div></div>
+            </div>
+            <div class="mt-4 grid grid-cols-2 gap-2 text-xs">
+              <div class="bg-white/15 rounded-lg p-2"><div class="opacity-80">Ends on</div><div class="font-semibold">2025-04-30</div></div>
+              <div class="bg-white/15 rounded-lg p-2"><div class="opacity-80">Balance</div><div class="font-semibold">Paid up</div></div>
+            </div>
+          </div>
+
+          <div>
+            <h3 class="text-sm font-semibold text-slate-700 mb-2">Today</h3>
+            <div class="flex items-center gap-3 p-3 rounded-xl border border-orange-200 bg-orange-50">
+              <div class="w-12 h-12 rounded-lg gradient-orange flex items-center justify-center text-white font-semibold">YO</div>
+              <div class="flex-1"><div class="font-semibold">Yoga Flow</div><div class="text-xs text-slate-500">07:00 · Riya</div></div>
+              <button class="text-xs px-3 py-1.5 rounded-full bg-slate-900 text-white">Check in</button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2">
+            <button class="rounded-2xl bg-white border border-slate-200 p-4"><div class="text-2xl">📅</div><div class="text-xs font-medium mt-2">Book class</div></button>
+            <button class="rounded-2xl bg-white border border-slate-200 p-4"><div class="text-2xl">💪</div><div class="text-xs font-medium mt-2">Book PT</div></button>
+            <button class="rounded-2xl bg-white border border-slate-200 p-4"><div class="text-2xl">💳</div><div class="text-xs font-medium mt-2">Pay dues</div></button>
+          </div>
+
+          <div>
+            <h3 class="text-sm font-semibold text-slate-700 mb-2">Upcoming</h3>
+            <ul class="space-y-2">
+              <li class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white"><div class="w-12 h-12 rounded-lg bg-rose-500 flex items-center justify-center text-white font-semibold">HI</div><div class="flex-1"><div class="font-semibold">HIIT Burn</div><div class="text-xs text-slate-500">Tomorrow 18:30 · Abhishek</div></div></li>
+              <li class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white"><div class="w-12 h-12 rounded-lg bg-blue-500 flex items-center justify-center text-white font-semibold">SP</div><div class="flex-1"><div class="font-semibold">Spin Express</div><div class="text-xs text-slate-500">May 1, 06:00 · Rajat</div></div><span class="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700">Waitlist</span></li>
+            </ul>
+          </div>
+        </main>
+        <nav class="bg-white border-t border-slate-200 grid grid-cols-5 text-xs px-2 py-2">
+          <button class="flex flex-col items-center text-orange-600"><span class="text-xl">🏠</span>Home</button>
+          <button class="flex flex-col items-center text-slate-500"><span class="text-xl">📅</span>Classes</button>
+          <button class="flex flex-col items-center text-slate-500"><span class="text-xl">📋</span>Bookings</button>
+          <button class="flex flex-col items-center text-slate-500"><span class="text-xl">💪</span>Plan</button>
+          <button class="flex flex-col items-center text-slate-500"><span class="text-xl">👤</span>Profile</button>
+        </nav>
+      </div>
+    </div>
+  </section>
+
+  <!-- CLASS BOOKING -->
+  <section id="booking" class="view hidden flex justify-center">
+    <div class="device">
+      <div class="device-content bg-slate-50">
+        <header class="bg-white px-4 py-3 border-b border-slate-200">
+          <div class="flex justify-between items-center mb-3">
+            <h1 class="font-bold">Classes</h1>
+            <button class="text-sm text-orange-600 font-medium">My bookings →</button>
+          </div>
+          <div class="flex gap-2 overflow-x-auto pb-1">
+            <button class="shrink-0 w-14 py-2 rounded-xl text-center bg-orange-500 text-white"><div class="text-[10px] uppercase">Tue</div><div class="text-lg font-bold">29</div></button>
+            <button class="shrink-0 w-14 py-2 rounded-xl text-center bg-slate-100 text-slate-600"><div class="text-[10px] uppercase">Wed</div><div class="text-lg font-bold">30</div></button>
+            <button class="shrink-0 w-14 py-2 rounded-xl text-center bg-slate-100 text-slate-600"><div class="text-[10px] uppercase">Thu</div><div class="text-lg font-bold">1</div></button>
+            <button class="shrink-0 w-14 py-2 rounded-xl text-center bg-slate-100 text-slate-600"><div class="text-[10px] uppercase">Fri</div><div class="text-lg font-bold">2</div></button>
+            <button class="shrink-0 w-14 py-2 rounded-xl text-center bg-slate-100 text-slate-600"><div class="text-[10px] uppercase">Sat</div><div class="text-lg font-bold">3</div></button>
+            <button class="shrink-0 w-14 py-2 rounded-xl text-center bg-slate-100 text-slate-600"><div class="text-[10px] uppercase">Sun</div><div class="text-lg font-bold">4</div></button>
+          </div>
+        </header>
+        <main class="p-4 space-y-3">
+          <div class="flex gap-2 overflow-x-auto pb-1 text-xs">
+            <button class="shrink-0 px-3 py-1.5 rounded-full bg-slate-900 text-white">All classes</button>
+            <button class="shrink-0 px-3 py-1.5 rounded-full border border-slate-200 text-slate-600">Yoga</button>
+            <button class="shrink-0 px-3 py-1.5 rounded-full border border-slate-200 text-slate-600">HIIT</button>
+            <button class="shrink-0 px-3 py-1.5 rounded-full border border-slate-200 text-slate-600">Cardio</button>
+            <button class="shrink-0 px-3 py-1.5 rounded-full border border-slate-200 text-slate-600">Dance</button>
+          </div>
+
+          <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div class="flex items-stretch">
+              <div class="w-1.5 bg-violet-500"></div>
+              <div class="flex-1 p-4">
+                <div class="flex justify-between items-start"><div><div class="font-semibold">Yoga Flow</div><div class="text-xs text-slate-500 mt-0.5">07:00 · Riya</div></div><span class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium">4 left</span></div>
+                <div class="mt-3 flex justify-between items-center"><span class="text-xs text-slate-500">👥 11/15 · yoga</span><button class="text-xs font-semibold px-4 py-1.5 rounded-full bg-slate-900 text-white">Book</button></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div class="flex items-stretch">
+              <div class="w-1.5 bg-rose-500"></div>
+              <div class="flex-1 p-4">
+                <div class="flex justify-between items-start"><div><div class="font-semibold">HIIT Burn</div><div class="text-xs text-slate-500 mt-0.5">18:30 · Abhishek</div></div><span class="text-xs px-2 py-1 rounded-full bg-rose-100 text-rose-700 font-medium">Full</span></div>
+                <div class="mt-3 flex justify-between items-center"><span class="text-xs text-slate-500">👥 12/12 · hiit</span><button class="text-xs font-semibold px-4 py-1.5 rounded-full bg-amber-500 text-white">Join waitlist</button></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div class="flex items-stretch">
+              <div class="w-1.5 bg-amber-500"></div>
+              <div class="flex-1 p-4">
+                <div class="flex justify-between items-start"><div><div class="font-semibold">Zumba Party</div><div class="text-xs text-slate-500 mt-0.5">19:00 · Maya</div></div><span class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium">11 left</span></div>
+                <div class="mt-3 flex justify-between items-center"><span class="text-xs text-slate-500">👥 14/25 · dance</span><button class="text-xs font-semibold px-4 py-1.5 rounded-full bg-slate-900 text-white">Book</button></div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  function show(id) {
+    document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
+    document.getElementById(id).classList.remove('hidden');
+    ['admin','trainer','member','booking'].forEach(k => {
+      const btn = document.getElementById('t-' + k);
+      if (k === id) {
+        btn.classList.add('bg-slate-900','text-white');
+        btn.classList.remove('text-slate-600');
+      } else {
+        btn.classList.remove('bg-slate-900','text-white');
+        btn.classList.add('text-slate-600');
+      }
+    });
+  }
+</script>
+</body>
+</html>

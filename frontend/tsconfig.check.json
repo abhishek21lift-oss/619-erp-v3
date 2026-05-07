@@ -1,0 +1,30 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "skipLibCheck": true,
+    "incremental": false,
+    "plugins": []
+  },
+  "include": [
+    "src/components/ui/cn.ts",
+    "src/components/ui/Button.tsx",
+    "src/components/ui/Card.tsx",
+    "src/components/ui/Badge.tsx",
+    "src/components/ui/Skeleton.tsx",
+    "src/components/ui/EmptyState.tsx",
+    "src/components/ui/KpiCard.tsx",
+    "src/components/ui/DonutChart.tsx",
+    "src/components/ui/index.ts",
+    "src/components/ErrorBoundary.tsx",
+    "src/lib/http.ts",
+    "src/lib/use-async.ts",
+    "src/lib/toast.tsx",
+    "src/app/dashboard/page.tsx",
+    "src/app/layout.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    ".next"
+  ]
+}
