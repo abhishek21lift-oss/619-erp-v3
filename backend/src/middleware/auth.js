@@ -45,7 +45,7 @@ async function auth(req, res, next) {
         // SECURITY: also filter out soft-deleted users (deleted_at IS NOT NULL)
         // so a user that an admin removed via the v3 soft-delete path can
         // never authenticate again with their old token.
-        `SELECT id, name, email, role, trainer_id, member_id, is_active
+        `SELECT id, name, email, role, trainer_id, member_id, branch_id, is_active
            FROM users
           WHERE id = $1
             AND COALESCE(deleted_at::text, '') = ''`,

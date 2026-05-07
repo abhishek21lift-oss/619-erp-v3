@@ -19,6 +19,12 @@ const router = require('express').Router();
 const { v4: uuid } = require('uuid');
 const pool = require('../db/pool');
 const { auth } = require('../middleware/auth');
+const { kioskTokenMiddleware } = require('../middleware/kiosk-token');
+function kioskOrAuth(req, res, next) {
+  if (req.user && req.user.role === 'kiosk') return next();
+  return auth(req, res, next);
+}
+
 
 // ──────────────────────────────────────────────────────────────────
 // Constants
@@ -69,7 +75,7 @@ async function logCheckIn({ clientId, status, distance, ip, userAgent }) {
 // POST /api/checkin/face
 // Body: { descriptor: number[128] }
 // ──────────────────────────────────────────────────────────────────
-router.post('/face', auth, async (req, res, next) => {
+router.post('/face', kioskTokenMiddleware, kioskOrAuth, async (req, res, next) => {
   try {
     const descriptor = req.body?.descriptor;
     if (!isValidDescriptor(descriptor)) {

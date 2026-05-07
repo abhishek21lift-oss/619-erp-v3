@@ -131,7 +131,32 @@ WHERE c.package_type IS NOT NULL
     SELECT 1 FROM subscriptions s WHERE s.client_id = c.id
   );
 
+-- ── Phase-2 additions (idempotent) ──────────────────────────────────
+-- Columns and view added after the original migration. Each ALTER /
+-- CREATE is guarded so re-running the migration is safe.
+
+ALTER TABLE subscriptions
+  ADD COLUMN IF NOT EXISTS trainer_id    TEXT REFERENCES trainers(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS freeze_from   DATE,
+  ADD COLUMN IF NOT EXISTS freeze_until  DATE,
+  ADD COLUMN IF NOT EXISTS performed_by  TEXT;
+
+-- "Members whose subscription auto-renews tomorrow" — used by the
+-- renewal worker to charge saved payment methods on T-1.
+CREATE INDEX IF NOT EXISTS idx_subs_auto_renew
+  ON subscriptions (end_date)
+  WHERE status = 'active' AND auto_renew = TRUE;
+
+-- A flat view of each member's current active sub. Member profile uses
+-- this instead of the legacy denorm columns once we migrate read paths.
+CREATE OR REPLACE VIEW v_active_subscription AS
+SELECT DISTINCT ON (client_id) *
+FROM subscriptions
+WHERE status = 'active'
+ORDER BY client_id, end_date DESC;
+
 -- ── Quick smoke test ────────────────────────────────────────────────
 -- After running, verify with:
 --   SELECT COUNT(*) FROM subscriptions;
 --   SELECT * FROM subscriptions ORDER BY created_at DESC LIMIT 5;
+--   SELECT * FROM v_active_subscription LIMIT 5;

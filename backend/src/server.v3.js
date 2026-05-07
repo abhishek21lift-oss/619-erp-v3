@@ -86,6 +86,7 @@ app.use('/api/attendance', require('./routes/attendance'));
 app.use('/api/checkin',    require('./routes/checkin'));
 app.use('/api/reports',    require('./routes/reports'));
 app.use('/api/plans',      require('./routes/plans'));
+app.use('/api/subscriptions', require('./modules/subscriptions/subscriptions.routes'));
 
 // ── v3 routes (new modules) ───────────────────────────────────────────────
 app.use('/api/v1/members',       require('./modules/members/members.routes'));
@@ -93,6 +94,7 @@ app.use('/api/v1/bookings',      require('./modules/bookings/bookings.routes'));
 app.use('/api/v1/pt-sessions',   require('./modules/sessions/sessions.routes'));
 app.use('/api/v1/notifications', require('./modules/notifications/notifications.routes'));
 app.use('/api/v1/reports',       require('./modules/reports/reports.routes'));
+app.use('/api/v1/subscriptions', require('./modules/subscriptions/subscriptions.routes'));
 
 // ── Error handling (mounts last) ──────────────────────────────────────────
 app.use(notFound);

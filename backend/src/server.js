@@ -137,6 +137,7 @@ app.use('/api/attendance', require('./routes/attendance'));
 app.use('/api/checkin',    require('./routes/checkin'));
 app.use('/api/reports',    require('./routes/reports'));
 app.use('/api/plans',      require('./routes/plans'));
+app.use('/api/subscriptions', require('./modules/subscriptions/subscriptions.routes'));
 
 // ─────────────────────────────
 // 404 (any unmatched /api route)
