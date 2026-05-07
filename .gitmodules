@@ -1,0 +1,3 @@
+[submodule "frontend"]
+	path = frontend
+	url = https://github.com/abhishek21lift-oss/619-erp-frontend.git
