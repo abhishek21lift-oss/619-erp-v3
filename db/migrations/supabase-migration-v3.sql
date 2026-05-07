@@ -53,9 +53,21 @@ UPDATE clients
        last_name  = COALESCE(last_name,  NULLIF(split_part(name, ' ', 2), ''))
  WHERE first_name IS NULL OR last_name IS NULL;
 
-UPDATE clients
-   SET member_code = COALESCE(member_code, 'YDL-' || LPAD(EXTRACT(EPOCH FROM created_at)::BIGINT::TEXT, 8, '0') || '-' || LEFT(id, 4))
- WHERE member_code IS NULL;
+-- Backfill any missing member_code with a sequential SIX19-#### value,
+-- ordered by created_at so the earliest member becomes SIX19-0001.
+WITH numbered AS (
+  SELECT id,
+         'SIX19-' || LPAD(
+           ROW_NUMBER() OVER (ORDER BY created_at NULLS LAST, id)::TEXT,
+           4, '0'
+         ) AS new_code
+    FROM clients
+   WHERE member_code IS NULL
+)
+UPDATE clients c
+   SET member_code = n.new_code
+  FROM numbered n
+ WHERE c.id = n.id;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_member_code ON clients(member_code) WHERE member_code IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_clients_search_name   ON clients (LOWER(name));
