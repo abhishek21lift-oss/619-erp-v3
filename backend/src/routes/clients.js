@@ -353,6 +353,20 @@ router.post('/', auth, async (req, res, next) => {
       clientId = 'FS' + String(n).padStart(4, '0');
     }
 
+    // Generate next sequential SIX19-#### member code in the same transaction
+    // (advisory lock above already serialises concurrent inserts).
+    const { rows: lastMc } = await client.query(
+      `SELECT member_code FROM clients
+        WHERE member_code ~ '^SIX19-[0-9]+$'
+        ORDER BY CAST(SUBSTRING(member_code FROM 7) AS INTEGER) DESC
+        LIMIT 1`
+    );
+    let memberCode = 'SIX19-0001';
+    if (lastMc[0]?.member_code) {
+      const n = parseInt(lastMc[0].member_code.replace('SIX19-', ''), 10) + 1;
+      memberCode = 'SIX19-' + String(n).padStart(4, '0');
+    }
+
     const id = uuid();
     const base    = num(d.base_amount,  0);
     const disc    = num(d.discount,     0);
@@ -379,12 +393,12 @@ router.post('/', auth, async (req, res, next) => {
 
     await client.query(`
       INSERT INTO clients (
-        id, client_id, name, mobile, email, gender, dob, address,
+        id, client_id, member_code, name, mobile, email, gender, dob, address,
         trainer_id, trainer_name, joining_date, pt_start_date, pt_end_date,
         package_type, base_amount, discount, final_amount, paid_amount, balance_amount,
         payment_method, payment_date, weight, notes, status, photo_url, biometric_code, biometric_added
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
-      [id, clientId, d.name.trim(), d.mobile||null, d.email?.toLowerCase()||null,
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)`,
+      [id, clientId, memberCode, d.name.trim(), d.mobile||null, d.email?.toLowerCase()||null,
        d.gender||null, d.dob||null, d.address||null,
        trainer_id, trainer_name,
        d.joining_date||null, d.pt_start_date||null, d.pt_end_date||null,

@@ -231,8 +231,12 @@ router.post('/face', auth, async (req, res, next) => {
 // ──────────────────────────────────────────────────────────────────
 router.post('/enroll', auth, async (req, res, next) => {
   try {
-    if (req.user.role !== 'admin' && req.user.role !== 'reception') {
-      return res.status(403).json({ error: 'Admin or reception only' });
+    // Owners and managers can also enroll faces — same trust level as admin
+    // for a single-gym deployment. Trainers can enroll only their own
+    // assigned members (validated below before the UPDATE).
+    const allowedRoles = new Set(['admin', 'owner', 'manager', 'reception', 'trainer']);
+    if (!allowedRoles.has(req.user.role)) {
+      return res.status(403).json({ error: 'Not allowed to enroll faces' });
     }
 
     const { client_id, descriptor } = req.body || {};
@@ -241,6 +245,17 @@ router.post('/enroll', auth, async (req, res, next) => {
       return res.status(400).json({
         error: `descriptor must be a length-${DESCRIPTOR_LENGTH} array of finite numbers`,
       });
+    }
+
+    // Trainers can only enroll their own assigned clients
+    if (req.user.role === 'trainer') {
+      const { rows: own } = await pool.query(
+        'SELECT 1 FROM clients WHERE id = $1 AND trainer_id = $2 LIMIT 1',
+        [client_id, req.user.trainer_id]
+      );
+      if (own.length === 0) {
+        return res.status(403).json({ error: 'Member is not assigned to you' });
+      }
     }
 
     const { rowCount } = await pool.query(
