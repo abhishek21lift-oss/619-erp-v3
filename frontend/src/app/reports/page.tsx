@@ -1,15 +1,19 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Guard from '@/components/Guard';
 import AppShell from '@/components/AppShell';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 
+// useSearchParams needs a Suspense boundary in Next.js App Router so the
+// page doesn't bail out of static generation. Wrap the content here.
 export default function ReportsPage() {
   return (
     <Guard>
-      <ReportsContent />
+      <Suspense fallback={null}>
+        <ReportsContent />
+      </Suspense>
     </Guard>
   );
 }

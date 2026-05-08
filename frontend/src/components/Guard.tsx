@@ -2,10 +2,16 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import type { Role } from '@/lib/nav-config';
 
 interface Props {
   children: React.ReactNode;
-  role?: 'admin' | 'trainer' | 'member';
+  /**
+   * Restrict to a single role. Accepts the full role union from
+   * nav-config (admin, manager, reception, trainer, member) so any
+   * page that forwards Role from RoutePlaceholderPage type-checks.
+   */
+  role?: Role;
 }
 
 export default function Guard({ children, role }: Props) {

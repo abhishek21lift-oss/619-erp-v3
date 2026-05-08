@@ -1,5 +1,5 @@
 'use client';
-import { use, useEffect, useState, useRef } from 'react';
+import { Suspense, use, useEffect, useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Guard from '@/components/Guard';
@@ -15,9 +15,18 @@ import { memberWhatsAppMessage, whatsappHref } from '@/lib/whatsapp';
 // must unwrap it with React's `use()` hook — accessing `params.id` directly
 // would yield `undefined`, which then hits /api/clients/undefined and surfaces
 // as a "Client not found" error in the UI.
+//
+// useSearchParams (used inside ClientDetail) requires a Suspense boundary
+// so the page doesn't bail out of static prerendering at build time.
 export default function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  return <Guard><ClientDetail id={id} /></Guard>;
+  return (
+    <Guard>
+      <Suspense fallback={null}>
+        <ClientDetail id={id} />
+      </Suspense>
+    </Guard>
+  );
 }
 
 type Tab = 'information' | 'subscriptions' | 'attendance' | 'workout' | 'followup' | 'documents' | 'referrals';
