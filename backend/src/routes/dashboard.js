@@ -236,4 +236,83 @@ function numOrZero(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
+// GET /api/dashboard/badges
+//
+// Lightweight counts the sidebar uses to render NEW/badge pills next to
+// nav items. The frontend (frontend/src/components/Sidebar.tsx) already
+// fetches this endpoint and silently swallows a 404 — adding a real
+// implementation just turns the silent failures into accurate badges.
+//
+// Response shape (all keys optional, integers, never null):
+//   {
+//     leadsCount, followupsToday, expiringCount,
+//     birthdaysToday, duesCount, pendingLeaves
+//   }
+router.get('/badges', auth, async (req, res, next) => {
+  try {
+    const isTrainer = req.user.role === 'trainer';
+    const tid       = isTrainer ? req.user.trainer_id : null;
+    const params    = tid ? [tid] : [];
+    const tFilter   = tid ? 'AND trainer_id = $1' : '';
+
+    const [leads, followupsToday, expiring, birthdays, dues] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*) AS count FROM clients
+          WHERE status = 'lead' ${tFilter}`,
+        params,
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM clients
+          WHERE status = 'lead'
+            AND COALESCE(next_followup_date::date, CURRENT_DATE) <= CURRENT_DATE
+            ${tFilter}`,
+        params,
+      ).catch(() => ({ rows: [{ count: 0 }] })),  // table column may be absent
+      pool.query(
+        `SELECT COUNT(*) AS count FROM clients
+          WHERE status = 'active'
+            AND pt_end_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+            ${tFilter}`,
+        params,
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM clients
+          WHERE status = 'active' AND dob IS NOT NULL
+            AND EXTRACT(DOY FROM dob::date) = EXTRACT(DOY FROM CURRENT_DATE)
+            ${tFilter}`,
+        params,
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM clients
+          WHERE balance_amount > 0 ${tFilter}`,
+        params,
+      ),
+    ]);
+
+    // pendingLeaves comes from a (currently optional) leave_requests table;
+    // swallow "does not exist" so the endpoint stays useful before that
+    // migration ships.
+    let pendingLeaves = 0;
+    try {
+      const r = await pool.query(
+        `SELECT COUNT(*) AS count FROM leave_requests WHERE status = 'pending'`,
+      );
+      pendingLeaves = intOrZero(r.rows[0].count);
+    } catch (_) {
+      pendingLeaves = 0;
+    }
+
+    res.json({
+      leadsCount:      intOrZero(leads.rows[0].count),
+      followupsToday:  intOrZero(followupsToday.rows[0].count),
+      expiringCount:   intOrZero(expiring.rows[0].count),
+      birthdaysToday:  intOrZero(birthdays.rows[0].count),
+      duesCount:       intOrZero(dues.rows[0].count),
+      pendingLeaves,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;
