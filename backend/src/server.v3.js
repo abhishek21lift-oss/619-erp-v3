@@ -38,9 +38,22 @@ app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
 // ── CORS — accept both CORS_ORIGIN (v3) and FRONTEND_URL (v2) for parity ─
+function validOrigin(origin) {
+  if (!origin) return null;
+  const trimmed = origin.trim();
+  try {
+    const url = new URL(trimmed);
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error('invalid protocol');
+    return url.origin;
+  } catch {
+    console.warn(`Ignoring invalid CORS origin: ${trimmed}`);
+    return null;
+  }
+}
+
 const allowedOrigins = [
-  ...(process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : []),
-  process.env.FRONTEND_URL,
+  ...(process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map(validOrigin) : []),
+  validOrigin(process.env.FRONTEND_URL),
   'http://localhost:3000',
   'http://127.0.0.1:3000',
 ].filter(Boolean);

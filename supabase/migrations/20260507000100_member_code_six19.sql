@@ -1,13 +1,26 @@
--- 20260507000100_member_code_six19.sql
+-- 2026-05-member-code-six19.sql
 --
 -- Convert legacy YDL-* member codes to the new SIX19-#### format.
--- Mirror of db/migrations/2026-05-member-code-six19.sql for the
--- supabase migration runner.
+--
+-- Why: the old migration generated codes like "YDL-17780735-e80b" which
+-- exposed an epoch timestamp + UUID prefix and was awkward to read out
+-- to a member. We now want sequential, human-friendly codes assigned
+-- chronologically by created_at: SIX19-0001, SIX19-0002, ...
+--
+-- The new client-create handler in backend/src/routes/clients.js issues
+-- SIX19-#### codes for any newly inserted client. This migration brings
+-- existing rows in line with that scheme.
+--
+-- Idempotent: running twice is a no-op once all rows have SIX19- codes.
 
 BEGIN;
 
+-- 1. Drop the unique index temporarily so the rewrite never collides
+--    mid-update. Re-created at the end.
 DROP INDEX IF EXISTS idx_clients_member_code;
 
+-- 2. Renumber every YDL-* (and any NULL) member_code in created_at order
+--    so the earliest member becomes SIX19-0001, the next SIX19-0002, etc.
 WITH numbered AS (
   SELECT id,
          'SIX19-' || LPAD(
@@ -24,6 +37,7 @@ UPDATE clients c
   FROM numbered n
  WHERE c.id = n.id;
 
+-- 3. Re-create the partial unique index.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_member_code
     ON clients(member_code)
  WHERE member_code IS NOT NULL;

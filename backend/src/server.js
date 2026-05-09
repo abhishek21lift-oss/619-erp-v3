@@ -40,8 +40,21 @@ app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { poli
 // ─────────────────────────────
 // CORS
 // ─────────────────────────────
+function validOrigin(origin) {
+  if (!origin) return null;
+  const trimmed = origin.trim();
+  try {
+    const url = new URL(trimmed);
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error('invalid protocol');
+    return url.origin;
+  } catch {
+    console.warn(`Ignoring invalid CORS origin: ${trimmed}`);
+    return null;
+  }
+}
+
 const allowedOrigins = [
-  process.env.FRONTEND_URL,
+  validOrigin(process.env.FRONTEND_URL),
   'http://localhost:3000',
   'http://127.0.0.1:3000',
 ].filter(Boolean);
@@ -96,7 +109,7 @@ app.get('/api/health', (req, res) => {
       mode:     NODE_ENV,
       database: !!process.env.DATABASE_URL,
       jwt:      !!process.env.JWT_SECRET,
-      frontend: process.env.FRONTEND_URL || '(not set)',
+      frontend: allowedOrigins.filter((o) => !o.includes('localhost') && !o.includes('127.0.0.1')),
     },
   });
 });
