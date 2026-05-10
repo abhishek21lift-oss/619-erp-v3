@@ -1,5 +1,5 @@
 'use client';
-import { Suspense, use, useEffect, useState, useRef } from 'react';
+import { use, useEffect, useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Guard from '@/components/Guard';
@@ -15,18 +15,9 @@ import { memberWhatsAppMessage, whatsappHref } from '@/lib/whatsapp';
 // must unwrap it with React's `use()` hook — accessing `params.id` directly
 // would yield `undefined`, which then hits /api/clients/undefined and surfaces
 // as a "Client not found" error in the UI.
-//
-// useSearchParams (used inside ClientDetail) requires a Suspense boundary
-// so the page doesn't bail out of static prerendering at build time.
 export default function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  return (
-    <Guard>
-      <Suspense fallback={null}>
-        <ClientDetail id={id} />
-      </Suspense>
-    </Guard>
-  );
+  return <Guard><ClientDetail id={id} /></Guard>;
 }
 
 type Tab = 'information' | 'subscriptions' | 'attendance' | 'workout' | 'followup' | 'documents' | 'referrals';
@@ -162,8 +153,8 @@ function ClientDetail({ id }: { id: string }) {
           upgrade:   { package_type: actionForm.package_type },
           downgrade: { package_type: actionForm.package_type },
           transfer:  { trainer_id: actionForm.trainer_id, trainer_name: trainers.find((t) => t.id === actionForm.trainer_id)?.name || '' },
-          'pt-assign': { trainer_id: actionForm.trainer_id, pt_start_date: actionForm.pt_start_date, pt_end_date: actionForm.pt_end_date },
-          'pt-renew':  { pt_start_date: actionForm.pt_start_date, pt_end_date: actionForm.pt_end_date },
+          'assign-pt': { trainer_id: actionForm.trainer_id, pt_start_date: actionForm.pt_start_date, pt_end_date: actionForm.pt_end_date },
+          'renew-pt':  { pt_start_date: actionForm.pt_start_date, pt_end_date: actionForm.pt_end_date },
           'check-in':  {},
           combo:       { package_type: actionForm.package_type || client?.package_type },
           trial:       {},
@@ -1108,8 +1099,8 @@ function ClientDetail({ id }: { id: string }) {
               <button className="btn btn-primary" style={{ flex: 1 }} disabled={actionSaving}
                 onClick={() => submitAction(
                   actionModal === 'check-in' ? 'check-in' :
-                  actionModal === 'pt_assign' ? 'pt-assign' :
-                  actionModal === 'pt_renew' ? 'pt-renew' :
+                  actionModal === 'pt_assign' ? 'assign-pt' :
+                  actionModal === 'pt_renew' ? 'renew-pt' :
                   actionModal
                 )}>
                 {actionSaving ? 'Processing…' : 'Confirm'}

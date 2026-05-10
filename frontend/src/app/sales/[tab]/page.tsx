@@ -13,7 +13,7 @@ export default function SalesTabPage({ params }: { params: Promise<{ tab: string
   return (
     <RoutePlaceholderPage
       title={title}
-      description="This sales tab has been scaffolded and is ready for feature implementation."
+      description="Track follow-up queues, recent conversations, and conversion tasks for the sales desk."
     />
   );
 }

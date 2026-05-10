@@ -1,12 +1,8 @@
 'use client';
 
-import RoutePlaceholderPage from '@/components/RoutePlaceholderPage';
+import ModuleWorkspace from '@/components/modules/ModuleWorkspace';
+import { getModuleConfig } from '@/lib/module-config';
 
 export default function AppointmentsPage() {
-  return (
-    <RoutePlaceholderPage
-      title="Appointments"
-      description="Manage booked consultations, PT slots, and schedule actions from this tab."
-    />
-  );
+  return <ModuleWorkspace config={getModuleConfig('appointments')} />;
 }

@@ -3,9 +3,32 @@
 // NEXT_PUBLIC_API_URL must be set on Vercel and in .env.local. The fallback
 // is localhost so a missing env var fails fast in development with a clear
 // error rather than 404-ing against a placeholder URL that doesn't exist.
-const BASE =
-  process.env.NEXT_PUBLIC_API_URL ||
-  'http://localhost:5000';
+const DEFAULT_API_BASE = 'http://localhost:5000';
+const RAW_API_BASE = process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_BASE;
+
+function apiBase() {
+  const trimmed = RAW_API_BASE.trim().replace(/\/+$/, '');
+  const isPlaceholder = /your-619-api\.onrender\.com/i.test(trimmed);
+
+  if (isPlaceholder && typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+    console.warn('[api] NEXT_PUBLIC_API_URL is still the placeholder Render URL. Falling back to localhost:5000.');
+    return DEFAULT_API_BASE;
+  }
+
+  if (isPlaceholder) {
+    throw new Error('NEXT_PUBLIC_API_URL is still set to the placeholder Render URL. Set it to the deployed backend URL.');
+  }
+
+  try {
+    const url = new URL(trimmed);
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error('invalid protocol');
+    return url.origin;
+  } catch {
+    throw new Error(`Invalid NEXT_PUBLIC_API_URL: ${RAW_API_BASE}`);
+  }
+}
+
+const BASE = apiBase();
 
 // ================= TYPES =================
 

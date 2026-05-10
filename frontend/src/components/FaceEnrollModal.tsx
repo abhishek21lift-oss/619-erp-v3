@@ -81,7 +81,6 @@ export default function FaceEnrollModal({ clientId, clientName, open, onClose, o
       detection.stopDetectionLoop();
       camera.stop();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // Detection loop — capture descriptors automatically while we're below the

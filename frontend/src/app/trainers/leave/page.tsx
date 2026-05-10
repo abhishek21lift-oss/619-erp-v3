@@ -1,13 +1,8 @@
 'use client';
 
-import RoutePlaceholderPage from '@/components/RoutePlaceholderPage';
+import ModuleWorkspace from '@/components/modules/ModuleWorkspace';
+import { getModuleConfig } from '@/lib/module-config';
 
 export default function TrainerLeaveRequestsPage() {
-  return (
-    <RoutePlaceholderPage
-      title="Leave Requests"
-      description="Track and approve coach leave requests from this screen."
-      role="admin"
-    />
-  );
+  return <ModuleWorkspace config={getModuleConfig('leave')} />;
 }

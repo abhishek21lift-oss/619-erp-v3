@@ -1,19 +1,16 @@
 'use client';
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import Guard from '@/components/Guard';
 import AppShell from '@/components/AppShell';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 
-// useSearchParams needs a Suspense boundary in Next.js App Router so the
-// page doesn't bail out of static generation. Wrap the content here.
 export default function ReportsPage() {
   return (
     <Guard>
-      <Suspense fallback={null}>
-        <ReportsContent />
-      </Suspense>
+      <ReportsContent />
     </Guard>
   );
 }
@@ -647,13 +644,13 @@ function StaffAttendanceView() {
         >
           {rangeDays} day{rangeDays !== 1 ? 's' : ''} · {trainers.length} staff
         </div>
-        <a
+        <Link
           href="/attendance/staff"
           className="btn btn-ghost btn-sm"
           style={{ marginLeft: 'auto' }}
         >
           Mark staff attendance →
-        </a>
+        </Link>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}

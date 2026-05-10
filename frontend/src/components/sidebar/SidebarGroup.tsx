@@ -1,13 +1,8 @@
 'use client';
 
 import SidebarItem from './SidebarItem';
-import type { NavGroup } from '@/lib/nav-config';
 
-interface Props {
-  group: NavGroup;
-}
-
-export default function SidebarGroup({ group }: Props) {
+export default function SidebarGroup({ group }: any) {
   return (
     <div>
       <h3 className="text-xs font-semibold uppercase text-gray-500 mb-2">
@@ -15,7 +10,7 @@ export default function SidebarGroup({ group }: Props) {
       </h3>
 
       <div className="space-y-1">
-        {group.items.map((item) => (
+        {group.items.map((item: any) => (
           <SidebarItem key={item.href} item={item} />
         ))}
       </div>

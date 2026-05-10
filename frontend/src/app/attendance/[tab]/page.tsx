@@ -13,7 +13,7 @@ export default function AttendanceTabPage({ params }: { params: Promise<{ tab: s
   return (
     <RoutePlaceholderPage
       title={title}
-      description="This attendance tab now opens correctly and can be implemented incrementally."
+      description="Review attendance trends, exceptions, and operational check-in summaries."
       role="admin"
     />
   );
