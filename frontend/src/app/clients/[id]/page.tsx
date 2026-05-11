@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Guard from '@/components/Guard';
 import AppShell from '@/components/AppShell';
 import FaceEnrollModal from '@/components/FaceEnrollModal';
-import { api, Client, Trainer } from '@/lib/api';
+import { api, Client, Subscription, Trainer } from '@/lib/api';
 import { request } from '@/lib/http';
 import { useAuth } from '@/lib/auth-context';
 import { fmtDate } from '@/lib/format';
@@ -22,6 +22,12 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
 
 type Tab = 'information' | 'subscriptions' | 'attendance' | 'workout' | 'followup' | 'documents' | 'referrals';
 
+const TAB_KEYS: Tab[] = ['information', 'subscriptions', 'attendance', 'workout', 'followup', 'documents', 'referrals'];
+
+function isTab(value: string | null): value is Tab {
+  return !!value && TAB_KEYS.includes(value as Tab);
+}
+
 function ClientDetail({ id }: { id: string }) {
   const router = useRouter();
   const sp = useSearchParams();
@@ -34,7 +40,8 @@ function ClientDetail({ id }: { id: string }) {
   const [error, setError]     = useState('');
   const [success, setSuccess] = useState('');
   const [form, setForm]       = useState<any>({});
-  const [activeTab, setActiveTab] = useState<Tab>('information');
+  const [activeTab, setActiveTab] = useState<Tab>(() => isTab(sp.get('tab')) ? sp.get('tab') as Tab : 'information');
+  const [subscriptionRows, setSubscriptionRows] = useState<Subscription[]>([]);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const isAdmin = user?.role === 'admin';
   const [faceEnrollOpen, setFaceEnrollOpen] = useState(false);
@@ -69,11 +76,32 @@ function ClientDetail({ id }: { id: string }) {
   }
 
   useEffect(() => {
-    Promise.all([api.clients.get(id), api.trainers.list()])
-      .then(([c, t]) => { setClient(c); setTrainers(t); setForm(c); })
+    const tab = sp.get('tab');
+    if (isTab(tab)) setActiveTab(tab);
+  }, [sp]);
+
+  useEffect(() => {
+    Promise.all([
+      api.clients.get(id),
+      api.trainers.list(),
+      api.subscriptions.listForClient(id).catch(() => []),
+    ])
+      .then(([c, t, subs]) => {
+        setClient(c);
+        setTrainers(t);
+        setForm(c);
+        setSubscriptionRows(Array.isArray(subs) && subs.length ? subs : ((c as any).subscriptions || []));
+      })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, [id]);
+
+  function selectTab(tab: Tab) {
+    setActiveTab(tab);
+    const next = new URLSearchParams(sp.toString());
+    next.set('tab', tab);
+    router.replace(`/clients/${id}?${next.toString()}`, { scroll: false });
+  }
 
   function set(k: string, v: any) { setForm((f: any) => ({ ...f, [k]: v })); }
 
@@ -309,7 +337,10 @@ function ClientDetail({ id }: { id: string }) {
   const weightLogs = client.weight_logs || [];
   const renewals = client.renewals || [];
   const followUps = client.follow_ups || [];
-  const subscriptions = client.subscriptions || [];
+  const subscriptions = normalizeSubscriptions(
+    subscriptionRows.length ? subscriptionRows : (client.subscriptions || []),
+    client,
+  );
   const documents = client.documents || [];
   const referrals = client.referrals || [];
   const workouts = client.workouts || [];
@@ -540,7 +571,7 @@ function ClientDetail({ id }: { id: string }) {
               {/* Tab nav */}
               <div className="card" style={{ padding: '.5rem' }}>
                 {tabs.map(t => (
-                  <button key={t.key} onClick={() => setActiveTab(t.key)}
+                  <button key={t.key} onClick={() => selectTab(t.key)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: '.6rem',
                       width: '100%', padding: '.6rem .85rem', borderRadius: 8,

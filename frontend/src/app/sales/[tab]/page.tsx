@@ -1,19 +1,10 @@
 'use client';
 
 import { use } from 'react';
-import RoutePlaceholderPage from '@/components/RoutePlaceholderPage';
-
-const LABELS: Record<string, string> = {
-  follow: 'Sales Follow-Ups',
-};
+import ModuleWorkspace from '@/components/modules/ModuleWorkspace';
+import { getModuleConfig } from '@/lib/module-config';
 
 export default function SalesTabPage({ params }: { params: Promise<{ tab: string }> }) {
   const { tab } = use(params);
-  const title = LABELS[tab] || 'Sales Module';
-  return (
-    <RoutePlaceholderPage
-      title={title}
-      description="Track follow-up queues, recent conversations, and conversion tasks for the sales desk."
-    />
-  );
+  return <ModuleWorkspace config={getModuleConfig('sales', tab)} />;
 }

@@ -268,6 +268,24 @@ const moduleCopy: Record<string, Partial<ModuleConfig>> = {
 };
 
 const simpleModules: Record<string, Partial<ModuleConfig>> = {
+  'sales-follow': {
+    title: 'Sales Follow-Ups',
+    description: 'Prioritize callbacks, trial reminders, lead objections, owner queues, and conversion tasks for the sales desk.',
+    entityName: 'Follow-up',
+    primaryAction: 'Create follow-up',
+    statuses: ['Pending', 'Scheduled', 'Completed', 'Escalated', 'Dropped'],
+    workflows: ['Assign counselor', 'Schedule call', 'Record outcome', 'Move to trial'],
+    insights: ['Due today', 'Hot leads', 'Trial reminders', 'Conversion tasks'],
+  },
+  'attendance-reports': {
+    title: 'Attendance Reports',
+    description: 'Review member and staff attendance trends, exceptions, check-in summaries, and export-ready audit reports.',
+    entityName: 'Attendance report',
+    primaryAction: 'Create report',
+    statuses: ['Queued', 'Ready', 'Exported', 'Scheduled', 'Failed'],
+    workflows: ['Choose date range', 'Review exceptions', 'Compare branch', 'Export report'],
+    insights: ['Footfall trend', 'Missed check-outs', 'Staff exceptions', 'Peak hour'],
+  },
   referrals: {
     title: 'Referral Management',
     description: 'Referral dashboard, invite tracking, rewards, coupon generation, analytics, leaderboard, and approval flow.',
@@ -518,6 +536,10 @@ export function getModuleConfig(area: string, tab?: string): ModuleConfig {
   const key =
     area === 'engagement'
       ? engagementAliases[raw] || `engagement-${raw}`
+      : area === 'sales' && raw === 'follow'
+        ? 'sales-follow'
+        : area === 'attendance' && raw === 'reports'
+          ? 'attendance-reports'
       : area === 'training' && raw === 'targets'
         ? 'trainer-targets'
         : area === 'members' && raw === 'referrals'
@@ -539,7 +561,7 @@ export function getModuleConfig(area: string, tab?: string): ModuleConfig {
 function adminRoleFor(key: string): Role | undefined {
   if (['referrals', 'appointments'].includes(key)) return undefined;
   if (key.startsWith('engagement-') && !['engagement-notifications', 'engagement-whatsapp', 'engagement-sms', 'engagement-community', 'engagement-challenges'].includes(key)) return 'admin';
-  return ['payroll', 'expenses', 'reports', 'plans', 'trainer-targets', 'branches', 'staff', 'biometric', 'equipment', 'notices', 'billing', 'branding', 'measurements', 'workouts', 'member-analytics', 'billing-analytics', 'leave'].includes(key)
+  return ['payroll', 'expenses', 'reports', 'plans', 'trainer-targets', 'attendance-reports', 'branches', 'staff', 'biometric', 'equipment', 'notices', 'billing', 'branding', 'measurements', 'workouts', 'member-analytics', 'billing-analytics', 'leave'].includes(key)
     ? 'admin'
     : undefined;
 }

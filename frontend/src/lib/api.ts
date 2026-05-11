@@ -119,6 +119,33 @@ export type Payment = {
   notes?: string;
 };
 
+export type Subscription = {
+  id: string;
+  client_id?: string;
+  plan_id?: string | null;
+  plan_name?: string;
+  package_type?: string;
+  kind?: string;
+  category?: string;
+  start_date?: string;
+  end_date?: string;
+  base_amount?: number;
+  discount_amount?: number;
+  final_amount?: number;
+  paid_amount?: number;
+  payment_method?: string;
+  receipt_no?: string;
+  coupon_code?: string;
+  group_id?: string;
+  status?: string;
+  freeze_days_used?: number;
+  freeze_days_max?: number;
+  freeze_from?: string;
+  freeze_until?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type Attendance = {
   id?: string;
   ref_id: string;
@@ -346,6 +373,13 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+  },
+
+  subscriptions: {
+    listForClient: (clientId: string) =>
+      req<Subscription[]>(`/api/subscriptions/client/${clientId}`),
+    activeForClient: (clientId: string) =>
+      req<Subscription | null>(`/api/subscriptions/active/${clientId}`),
   },
 
   trainers: {
