@@ -19,6 +19,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Fuse from 'fuse.js';
+import type { LucideProps } from 'lucide-react';
 import {
   // Nav icons
   LayoutDashboard, TrendingUp, Users, Dumbbell, ScanFace,
@@ -47,8 +48,12 @@ import {
 
 // ─────────────────────────────────────────────────────────────────────
 // Icon map: Lucide name → component
+// Use LucideProps (the real prop type) so `size?: string | number`
+// is compatible and TypeScript doesn't complain.
 // ─────────────────────────────────────────────────────────────────────
-const ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+type LucideIcon = React.ComponentType<LucideProps>;
+
+const ICONS: Record<string, LucideIcon> = {
   LayoutDashboard, TrendingUp, Users, Dumbbell, ScanFace,
   CreditCard, IndianRupee, LineChart, Megaphone, Settings,
   Inbox, PlusCircle, Filter, PieChart,
