@@ -1,439 +1,356 @@
 'use client';
-import React, { use } from 'react';
-import { useEffect, useState, useRef } from 'react';
+/**
+ * Trainer Profile Page
+ * Shows trainer details, their assigned members list, and schedule.
+ */
+import React, { use, useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Guard from '@/components/Guard';
 import AppShell from '@/components/AppShell';
-import { api } from '@/lib/api';
-import { request } from '@/lib/http';
-import { fmtDate } from '@/lib/format';
-import { Camera, User, Phone, Mail, Briefcase, Calendar, TrendingUp, Users, CheckCircle2, IndianRupee, Edit2, Trash2, Upload, RefreshCw } from 'lucide-react';
+import { useAuth } from '@/lib/auth-context';
+import {
+  ArrowLeft, User, Phone, Mail, Edit2, Trash2, Users,
+  MessageCircle, Award, Calendar, Dumbbell, CheckCircle, XCircle,
+} from 'lucide-react';
 
-// Next.js 15+ made dynamic route `params` a Promise — must be unwrapped with
-// React.use() in client components. Reading `params.id` directly yields
-// `undefined` and triggers a spurious "not found" against /api/trainers/undefined.
-export default function TrainerDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
-  return <Guard role="admin"><TrainerDetail id={id} /></Guard>;
+/* ─── Types ─────────────────────────────────────────────── */
+interface TrainerDetail {
+  id: number;
+  name: string;
+  email?: string;
+  phone?: string;
+  specialization?: string;
+  bio?: string;
+  status: 'active' | 'inactive';
+  join_date?: string;
+  certifications?: string[];
+  schedule?: string;
 }
 
-function TrainerDetail({ id }: { id: string }) {
+interface AssignedMember {
+  id: number;
+  name: string;
+  status: 'active' | 'expired' | 'frozen' | 'pending';
+  membership_plan?: string;
+  expiry_date?: string;
+  phone?: string;
+}
+
+/* ─── Helpers ───────────────────────────────────────────── */
+function fmtDate(d?: string) {
+  if (!d) return '—';
+  const dt = new Date(d);
+  return isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    active: 'badge-success', expired: 'badge-danger',
+    frozen: 'badge-info', pending: 'badge-warning', inactive: 'badge-secondary',
+  };
+  return <span className={`badge ${map[status] ?? 'badge-secondary'}`}>{status}</span>;
+}
+
+function InfoRow({ label, value }: { label: string; value?: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
+      <span style={{ fontSize: 14, color: 'var(--text-primary)', fontWeight: 500 }}>{value ?? '—'}</span>
+    </div>
+  );
+}
+
+/* ─── Main ──────────────────────────────────────────────── */
+export default function TrainerProfilePage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const router = useRouter();
-  const [data, setData]         = useState<any>(null);
+  const { user } = useAuth();
+
+  const [trainer, setTrainer]   = useState<TrainerDetail | null>(null);
+  const [members, setMembers]   = useState<AssignedMember[]>([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
-  const [success, setSuccess]   = useState('');
-  const [photoSaving, setPhotoSaving] = useState(false);
-  const [assignedClients, setAssignedClients] = useState<any[]>([]);
-  const [statsLoading, setStatsLoading] = useState(false);
-  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [activeTab, setActiveTab] = useState<'profile' | 'members'>('profile');
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    setLoading(true);
-    api.trainers.get(id)
-      .then((d: any) => {
-        setData(d);
-        // Load cached photo if no photo_url in backend data
-        const cachedPhoto = localStorage.getItem(`trainer_photo_${id}`);
-        if (cachedPhoto && !d.photo_url) {
-          setData((prev: any) => ({ ...prev, photo_url: cachedPhoto }));
-        }
-      })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
+  const fetchData = useCallback(async () => {
+    setLoading(true); setError('');
+    try {
+      const token = localStorage.getItem('619_token') ?? '';
+      const headers = { Authorization: `Bearer ${token}` };
+      const [tRes, mRes] = await Promise.allSettled([
+        fetch(`/api/trainers/${id}`, { headers }),
+        fetch(`/api/trainers/${id}/members`, { headers }),
+      ]);
+      if (tRes.status === 'fulfilled' && tRes.value.ok) {
+        setTrainer(await tRes.value.json());
+      } else throw new Error('Trainer not found');
+      if (mRes.status === 'fulfilled' && mRes.value.ok) {
+        const d = await mRes.value.json();
+        setMembers(Array.isArray(d) ? d : (d.members ?? []));
+      }
+    } catch (e: any) {
+      setError(e.message || 'Failed to load trainer.');
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
 
-  // Fetch assigned clients for stats
-  useEffect(() => {
-    if (!data) return;
-    setStatsLoading(true);
-    api.clients.list({ limit: 500 })
-      .then((all: any) => {
-        const list = Array.isArray(all) ? all : (all?.clients ?? []);
-        setAssignedClients(list.filter((c: any) => c.trainer_id === id));
-      })
-      .catch(() => {})
-      .finally(() => setStatsLoading(false));
-  }, [data, id]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  async function updatePhoto(photoUrl: string) {
-    if (!data) return;
-    setPhotoSaving(true); setError(''); setSuccess('');
+  async function handleDelete() {
+    setDeleting(true);
     try {
-      const updated = await request<any>(`/api/trainers/${id}`, {
-        method: 'PUT',
-        body: { ...data, photo_url: photoUrl },
-        retries: 1,
+      const token = localStorage.getItem('619_token') ?? '';
+      const res = await fetch(`/api/trainers/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
       });
-      setData((prev: any) => ({ ...prev, ...(updated.trainer || updated), photo_url: photoUrl }));
-      // Persist to localStorage
-      if (photoUrl) {
-        localStorage.setItem(`trainer_photo_${id}`, photoUrl);
-      } else {
-        localStorage.removeItem(`trainer_photo_${id}`);
-      }
-      setSuccess('Photo updated successfully!');
-      setTimeout(() => setSuccess(''), 3000);
-    } catch {
-      setData((prev: any) => ({ ...prev, photo_url: photoUrl }));
-      // Still persist even on error
-      if (photoUrl) {
-        localStorage.setItem(`trainer_photo_${id}`, photoUrl);
-      } else {
-        localStorage.removeItem(`trainer_photo_${id}`);
-      }
-      setSuccess('Photo updated (local only — will sync when backend is live).');
-      setTimeout(() => setSuccess(''), 4000);
-    } finally { setPhotoSaving(false); }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      router.push('/trainers');
+    } catch (e: any) {
+      alert(`Failed: ${e.message}`);
+      setDeleting(false);
+    }
   }
 
-  function handlePhotoFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    if (!file.type.startsWith('image/')) { setError('Please choose an image file.'); return; }
-    if (file.size > 1_500_000) { setError('Please choose an image smaller than 1.5 MB.'); return; }
-    const reader = new FileReader();
-    reader.onload = () => updatePhoto(String(reader.result || ''));
-    reader.onerror = () => setError('Could not read the selected image.');
-    reader.readAsDataURL(file);
-  }
-
-  function promptPhotoUrl() {
-    const url = window.prompt('Paste an image URL for this trainer', data?.photo_url || '');
-    if (url === null) return;
-    updatePhoto(url.trim());
-  }
-
-  function removePhoto() { updatePhoto(''); }
-
-  const fmt = (n: any) => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
-  const fmtK = (n: any) => {
-    const v = Number(n || 0);
-    if (v >= 100000) return '₹' + (v / 100000).toFixed(1) + 'L';
-    if (v >= 1000)   return '₹' + (v / 1000).toFixed(1) + 'K';
-    return '₹' + v.toLocaleString('en-IN');
+  const whatsappHref = () => {
+    if (!trainer?.phone) return '#';
+    const n = trainer.phone.replace(/\D/g, '');
+    const num = n.startsWith('91') ? n : `91${n}`;
+    return `https://wa.me/${num}?text=${encodeURIComponent(`Hi ${trainer.name}, this is a message from 619 Fitness Studio.`)}`;
   };
 
-  // Compute stats from assigned clients
-  const today = new Date();
-  const activePtClients = assignedClients.filter(c =>
-    c.status === 'active' && c.pt_end_date && new Date(c.pt_end_date) >= today
-  ).length;
-  const thisMonthRev = assignedClients
-    .filter(c => c.pt_end_date && new Date(c.pt_end_date) >= today)
-    .reduce((sum, c) => sum + (Number(c.final_amount) || 0), 0);
-  const incentiveRate = thisMonthRev >= 50000 ? 50 : 40;
+  const isAdmin = user?.role === 'admin' || user?.role === 'manager';
 
-  if (loading) return (
-    <AppShell>
-      <div className="page-main">
-        <div className="page-content" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
-          <div className="text-muted pulse">Loading trainer profile…</div>
-        </div>
-      </div>
-    </AppShell>
-  );
+  /* ── Loading ── */
+  if (loading) {
+    return (
+      <Guard>
+        <AppShell title="Trainer Profile">
+          <div className="page-container">
+            <div className="skeleton" style={{ height: 180, borderRadius: 12, marginBottom: 16 }} />
+            <div className="skeleton" style={{ height: 350, borderRadius: 12 }} />
+          </div>
+        </AppShell>
+      </Guard>
+    );
+  }
 
-  if (!data || error) return (
-    <AppShell>
-      <div className="page-main">
-        <div className="page-content">
-          <div className="alert alert-error">{error || 'Trainer not found'}</div>
-          <Link href="/trainers" className="btn btn-ghost">← Back to trainers</Link>
-        </div>
-      </div>
-    </AppShell>
-  );
-
-  const t = data;
-  const stats = data.stats || {};
-  const clients: any[]  = data.clients || [];
-  const payments: any[] = data.payments || [];
-  const monthly: any[]  = data.monthly || [];
-  const initials = (t.name || 'T').split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
-  const maxRev = Math.max(...monthly.map((m: any) => m.revenue), 1);
+  if (error || !trainer) {
+    return (
+      <Guard>
+        <AppShell title="Trainer Profile">
+          <div className="page-container">
+            <div className="empty-state">
+              <User size={36} className="empty-state-icon" />
+              <p className="empty-state-title">{error || 'Trainer not found'}</p>
+              <button className="btn btn-primary btn-sm" onClick={() => router.back()}>Go back</button>
+            </div>
+          </div>
+        </AppShell>
+      </Guard>
+    );
+  }
 
   return (
-    <AppShell>
-      <div className="page-main">
-        <div className="topbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <button onClick={() => router.back()} className="btn btn-ghost btn-sm">←</button>
-            <div>
-              <div className="topbar-title">{t.name}</div>
-              <div className="topbar-sub">{t.role || 'Personal Trainer'} · <span className={`badge badge-${t.status === 'active' ? 'active' : 'expired'}`}>{t.status}</span></div>
-            </div>
-          </div>
-        </div>
+    <Guard>
+      <AppShell title="Trainer Profile">
+        <div className="page-container animate-fade-in">
 
-        <div className="page-content fade-up">
-          {error   && <div className="alert alert-error mb-2">{error}</div>}
-          {success && <div className="alert alert-success mb-2">{success}</div>}
+          {/* ── Back ── */}
+          <button className="btn btn-ghost btn-sm" onClick={() => router.back()} style={{ marginBottom: 16 }}>
+            <ArrowLeft size={14} /> Back to Trainers
+          </button>
 
-          {/* PREMIUM PROFILE HEADER */}
-          <div className="trainer-profile-header">
-            <div className="trainer-profile-banner" />
-            <div className="trainer-profile-header-content">
-              <div className="trainer-profile-photo-wrap">
-                {t.photo_url
-                  ? <img src={t.photo_url} alt={t.name} className="trainer-profile-img" />
-                  : <div className="trainer-profile-initials">{initials}</div>
-                }
-                <div className="trainer-profile-photo-actions">
-                  <button
-                    onClick={() => photoInputRef.current?.click()}
-                    className="trainer-photo-btn"
-                    title="Upload photo"
-                    disabled={photoSaving}
-                  >
-                    <Camera size={14} />
-                  </button>
-                  {data.photo_url && (
-                    <button
-                      onClick={removePhoto}
-                      className="trainer-photo-btn trainer-photo-btn-danger"
-                      title="Remove"
-                      disabled={photoSaving}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  )}
+          {/* ── Header card ── */}
+          <div className="card" style={{ padding: 24, marginBottom: 16 }}>
+            <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              {/* Avatar */}
+              <div style={{
+                width: 68, height: 68, borderRadius: '50%', flexShrink: 0,
+                background: 'linear-gradient(135deg, #dc2626, #b91c1c)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 24, fontWeight: 700, color: '#fff',
+              }}>
+                {trainer.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
+              </div>
+
+              {/* Details */}
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+                  <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>{trainer.name}</h2>
+                  <StatusBadge status={trainer.status} />
                 </div>
-              </div>
-              <div className="trainer-profile-meta">
-                <h1 className="trainer-profile-name">{data.name}</h1>
-                <p className="trainer-profile-role">{data.role || data.specialization || 'Trainer'}</p>
-                <div className="trainer-profile-tags">
-                  {data.status && <span className={`badge badge-${data.status}`}>{data.status}</span>}
-                  {data.specialization && <span className="tag">{data.specialization}</span>}
-                </div>
-              </div>
-            </div>
-            {/* Stats row */}
-            <div className="trainer-stats-row">
-              <div className="trainer-stat">
-                <div className="trainer-stat-value">{activePtClients}</div>
-                <div className="trainer-stat-label">Active Clients</div>
-              </div>
-              <div className="trainer-stat">
-                <div className="trainer-stat-value">{fmtK(thisMonthRev)}</div>
-                <div className="trainer-stat-label">This Month</div>
-              </div>
-              <div className="trainer-stat">
-                <div className="trainer-stat-value">{incentiveRate}%</div>
-                <div className="trainer-stat-label">Incentive Rate</div>
-              </div>
-              <div className="trainer-stat">
-                <div className="trainer-stat-value">{assignedClients.length}</div>
-                <div className="trainer-stat-label">Total Assigned</div>
-              </div>
-            </div>
-          </div>
-
-          <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoFile} style={{ display: 'none' }} />
-
-          {/* KPI ROW */}
-          <div className="kpi-grid mb-3">
-            <KpiCard color="green" icon={<Users size={20} />} label="Active Clients" value={String(activePtClients)} sub={`${assignedClients.length} total enrolled`} />
-            <KpiCard color="red"   icon={<IndianRupee size={20} />} label="Month Revenue"  value={fmtK(thisMonthRev)} sub="This calendar month" />
-            <KpiCard color="purple" icon={<TrendingUp size={20} />} label="Month Incentive" value={fmtK(thisMonthRev * incentiveRate / 100)} sub={`@ ${incentiveRate}% rate`} />
-            <KpiCard color="blue"  icon={<CheckCircle2 size={20} />} label="Lifetime Revenue" value={fmtK(assignedClients.reduce((s,c) => s+(Number(c.final_amount)||0),0))} sub="All-time enrolled" />
-          </div>
-
-          {/* 6-month revenue trend */}
-          {monthly.length > 0 && (
-            <div className="card mb-3">
-              <div className="card-title">Revenue Trend (Last 6 months)</div>
-              <div className="chart-bars">
-                {monthly.map((m: any, i: number) => (
-                  <div key={i} className="chart-bar-col" title={`${m.month}: ${fmt(m.revenue)}`}>
-                    <div className="chart-bar-val" style={{ marginTop: 'auto', marginBottom: 4 }}>
-                      {m.revenue >= 1000 ? '₹' + (m.revenue / 1000).toFixed(0) + 'K' : '₹' + m.revenue}
-                    </div>
-                    <div className="chart-bar" style={{ height: `${Math.max((m.revenue / maxRev) * 100, 3)}%`, minHeight: 4 }} />
-                    <div style={{
-                      position: 'absolute', bottom: 4, fontSize: 10, color: 'var(--muted)',
-                      whiteSpace: 'nowrap',
-                    }}>{m.month}</div>
+                {trainer.specialization && (
+                  <div style={{ fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8 }}>
+                    <Dumbbell size={12} /> {trainer.specialization}
                   </div>
-                ))}
+                )}
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                  {trainer.phone && (
+                    <span style={{ fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Phone size={12} /> {trainer.phone}
+                    </span>
+                  )}
+                  {trainer.email && (
+                    <span style={{ fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Mail size={12} /> {trainer.email}
+                    </span>
+                  )}
+                  <span style={{ fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Users size={12} /> {members.length} member{members.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
               </div>
-            </div>
-          )}
 
-          {/* ASSIGNED CLIENTS MINI-LIST */}
-          {assignedClients.length > 0 && (
-            <div className="card" style={{ marginBottom: '1.5rem', padding: 0 }}>
-              <div className="card-header-row">
-                <span className="card-title"><Users size={16}/> Assigned Clients ({assignedClients.length})</span>
-                <Link href="/clients" className="link-sm">View all →</Link>
-              </div>
-              <div className="trainer-client-list">
-                {assignedClients.slice(0, 8).map((c: any) => (
-                  <Link key={c.id} href={`/clients/${c.id}`} className="trainer-client-row">
-                    <div className="trainer-client-avatar">{c.name?.slice(0,2).toUpperCase()}</div>
-                    <div className="trainer-client-info">
-                      <div className="trainer-client-name">{c.name}</div>
-                      <div className="trainer-client-plan">{c.package_type || 'No plan'}</div>
-                    </div>
-                    <span className={`badge badge-${c.status}`}>{c.status}</span>
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {trainer.phone && (
+                  <a href={whatsappHref()} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm">
+                    <MessageCircle size={13} /> WhatsApp
+                  </a>
+                )}
+                {isAdmin && (
+                  <Link href={`/trainers/${id}/edit`} className="btn btn-outline btn-sm">
+                    <Edit2 size={13} /> Edit
                   </Link>
-                ))}
+                )}
+                {user?.role === 'admin' && (
+                  <button className="btn btn-danger btn-sm" onClick={() => setDeleteConfirm(true)}>
+                    <Trash2 size={13} /> Remove
+                  </button>
+                )}
               </div>
+            </div>
+          </div>
+
+          {/* ── Tabs ── */}
+          <div className="tab-bar" style={{ marginBottom: 16 }}>
+            {(['profile', 'members'] as const).map((t) => (
+              <button key={t} className={`tab-btn ${activeTab === t ? 'active' : ''}`} onClick={() => setActiveTab(t)}>
+                {t === 'members' ? `Members (${members.length})` : 'Profile'}
+              </button>
+            ))}
+          </div>
+
+          {/* ── Profile tab ── */}
+          {activeTab === 'profile' && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+              <div className="card" style={{ padding: 20 }}>
+                <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <User size={14} /> Personal Details
+                </h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <InfoRow label="Full Name" value={trainer.name} />
+                  <InfoRow label="Status" value={<StatusBadge status={trainer.status} />} />
+                  <InfoRow label="Phone" value={trainer.phone} />
+                  <InfoRow label="Email" value={trainer.email} />
+                  <InfoRow label="Specialization" value={trainer.specialization} />
+                  <InfoRow label="Joined" value={fmtDate(trainer.join_date)} />
+                </div>
+              </div>
+
+              <div className="card" style={{ padding: 20 }}>
+                <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Award size={14} /> Certifications & Schedule
+                </h3>
+                {trainer.certifications && trainer.certifications.length > 0 ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+                    {trainer.certifications.map((c, i) => (
+                      <span key={i} className="badge badge-info" style={{ fontSize: 12 }}>{c}</span>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>No certifications listed.</p>
+                )}
+                <InfoRow label="Schedule / Timing" value={trainer.schedule} />
+              </div>
+
+              {trainer.bio && (
+                <div className="card" style={{ padding: 20, gridColumn: '1/-1' }}>
+                  <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 12 }}>Bio</h3>
+                  <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{trainer.bio}</p>
+                </div>
+              )}
             </div>
           )}
 
-          {/* PERSONAL + EMPLOYMENT INFO */}
-          <div style={{ display: 'grid', gap: '1.25rem', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', marginBottom: '1.5rem' }}>
-            <div className="card">
-              <div className="card-title">Personal Details</div>
-              <InfoRow label={<><Phone size={14} /> Mobile</>} value={t.mobile} />
-              <InfoRow label={<><Mail size={14} /> Email</>} value={t.email} />
-              <InfoRow label={<><Calendar size={14} /> Date of Birth</>} value={t.dob ? String(t.dob).split('T')[0] : null} />
-              <InfoRow label={<><User size={14} /> Gender</>} value={t.gender} />
-              <InfoRow label={<>📍 Address</>} value={t.address} />
-            </div>
-
-            <div className="card">
-              <div className="card-title">Employment</div>
-              <InfoRow label={<><Briefcase size={14} /> Role</>} value={t.role} />
-              <InfoRow label={<><Calendar size={14} /> Joining Date</>} value={t.joining_date ? String(t.joining_date).split('T')[0] : null} />
-              <InfoRow label={<><IndianRupee size={14} /> Salary</>} value={t.salary ? fmt(t.salary) : null} />
-              <InfoRow label={<><TrendingUp size={14} /> Incentive Rate</>} value={t.incentive_rate ? Math.round(t.incentive_rate * 100) + '%' : null} />
-              <InfoRow label={<>🎯 Specialization</>} value={t.specialization} />
-              <InfoRow label={<>🎓 Certifications</>} value={t.certifications} />
-              {t.notes && <InfoRow label={<>📋 Notes</>} value={t.notes} />}
-            </div>
-          </div>
-
-          {/* CLIENTS TABLE */}
-          <div className="card mb-3" style={{ padding: 0 }}>
-            <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div className="card-title" style={{ marginBottom: 0 }}>Clients ({clients.length})</div>
-              <Link href="/clients" className="btn btn-ghost btn-sm">View all clients →</Link>
-            </div>
-            {clients.length === 0 ? (
-              <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--muted)' }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>👥</div>
-                No clients assigned to this trainer yet
+          {/* ── Members tab ── */}
+          {activeTab === 'members' && (
+            <div className="card" style={{ overflow: 'hidden' }}>
+              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+                <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                  Assigned Members ({members.length})
+                </h3>
               </div>
-            ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>ID</th><th>Name</th><th>Mobile</th>
-                      <th>Package</th><th>Expires</th>
-                      <th style={{ textAlign: 'right' }}>Paid</th>
-                      <th style={{ textAlign: 'right' }}>Balance</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {clients.map((c: any) => (
-                      <tr key={c.id}>
-                        <td><span className="mono text-muted text-xs">{c.client_id}</span></td>
-                        <td>
-                          <Link href={`/clients/${c.id}`} style={{ fontWeight: 600, color: 'var(--brand2)' }}>
-                            {c.name}
-                          </Link>
-                        </td>
-                        <td className="text-muted">{c.mobile || '—'}</td>
-                        <td>{c.package_type || '—'}</td>
-                        <td className="text-muted">{fmtDate(c.pt_end_date)}</td>
-                        <td style={{ textAlign: 'right', color: 'var(--success)', fontWeight: 600 }}>{fmt(c.paid_amount)}</td>
-                        <td style={{ textAlign: 'right', color: c.balance_amount > 0 ? 'var(--danger)' : 'var(--muted)', fontWeight: c.balance_amount > 0 ? 700 : 400 }}>
-                          {c.balance_amount > 0 ? fmt(c.balance_amount) : '✓'}
-                        </td>
-                        <td><span className={`badge badge-${c.status}`}>{c.status}</span></td>
+              {members.length === 0 ? (
+                <div className="empty-state">
+                  <Users size={32} className="empty-state-icon" />
+                  <p className="empty-state-title">No members assigned</p>
+                  <p className="empty-state-desc">Assign members to this trainer from the Members page.</p>
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Status</th>
+                        <th>Plan</th>
+                        <th>Expiry</th>
+                        <th>Phone</th>
+                        <th />
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* RECENT PAYMENTS */}
-          <div className="card" style={{ padding: 0 }}>
-            <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div className="card-title" style={{ marginBottom: 0 }}>Recent Payments Collected</div>
-              <div className="text-muted text-sm">{payments.length} record{payments.length !== 1 ? 's' : ''}</div>
+                    </thead>
+                    <tbody>
+                      {members.map((m) => (
+                        <tr key={m.id} style={{ cursor: 'pointer' }} onClick={() => router.push(`/clients/${m.id}`)}>
+                          <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{m.name}</td>
+                          <td><StatusBadge status={m.status} /></td>
+                          <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{m.membership_plan ?? '—'}</td>
+                          <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{fmtDate(m.expiry_date)}</td>
+                          <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{m.phone ?? '—'}</td>
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <Link href={`/clients/${m.id}`} className="btn btn-ghost btn-sm" style={{ fontSize: 12 }}>
+                              View
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-            {payments.length === 0 ? (
-              <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--muted)' }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>💳</div>
-                No payments recorded yet
-              </div>
-            ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Receipt</th><th>Client</th>
-                      <th style={{ textAlign: 'right' }}>Amount</th>
-                      <th>Method</th><th>Date</th>
-                      <th style={{ textAlign: 'right' }}>Incentive</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payments.map((p: any) => (
-                      <tr key={p.id}>
-                        <td><span className="mono text-muted text-xs">{p.receipt_no || '—'}</span></td>
-                        <td style={{ fontWeight: 600 }}>{p.client_name || '—'}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>{fmt(p.amount)}</td>
-                        <td><span className={`badge badge-${(p.method || 'cash').toLowerCase()}`}>{p.method}</span></td>
-                        <td className="text-muted">{fmtDate(p.date)}</td>
-                        <td style={{ textAlign: 'right', color: 'var(--purple)', fontWeight: 600 }}>{fmt(p.incentive_amt)}</td>
-                      </tr>
-                    ))}
-                  
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
+          )}
         </div>
-      </div>
-    </AppShell>
+
+        {/* ── Delete Modal ── */}
+        {deleteConfirm && (
+          <div className="modal-backdrop" onClick={() => setDeleteConfirm(false)}>
+            <div className="modal animate-slide-up" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400 }}>
+              <div className="modal-header">
+                <h3 className="modal-title">Remove Trainer</h3>
+                <button className="modal-close" onClick={() => setDeleteConfirm(false)}>×</button>
+              </div>
+              <div className="modal-body">
+                <p style={{ color: 'var(--text-secondary)' }}>
+                  Remove <strong>{trainer.name}</strong>? Their {members.length} assigned member{members.length !== 1 ? 's' : ''} will become unassigned.
+                </p>
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-outline btn-sm" onClick={() => setDeleteConfirm(false)}>Cancel</button>
+                <button className="btn btn-danger btn-sm" onClick={handleDelete} disabled={deleting}>
+                  {deleting ? 'Removing…' : 'Remove trainer'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </AppShell>
+    </Guard>
   );
 }
-
-/* ─── Local helper components ───────────────────────────── */
-
-function KpiCard({ color, icon, label, value, sub }: {
-  color: string; icon: React.ReactNode; label: string; value: string; sub?: string;
-}) {
-  const gradients: Record<string,string> = {
-    green:  'linear-gradient(135deg,#22c55e,#86efac)',
-    red:    'linear-gradient(135deg,#ef4444,#fca5a5)',
-    purple: 'linear-gradient(135deg,#a855f7,#c084fc)',
-    blue:   'linear-gradient(135deg,#3b82f6,#93c5fd)',
-    amber:  'linear-gradient(135deg,#f59e0b,#fcd34d)',
-  };
-  const gradient = gradients[color] || gradients.blue;
-  return (
-    <div className="kpi-card" style={{ '--kpi-gradient': gradient } as React.CSSProperties}>
-      <div className="kpi-card-header">
-        <span className="kpi-card-label">{label}</span>
-        <div className="kpi-card-icon" style={{ background: gradient }}>{icon}</div>
-      </div>
-      <div className="kpi-card-value">{value}</div>
-      {sub && <div className="kpi-card-footer">{sub}</div>}
-    </div>
-  );
-}
-
-function InfoRow({ label, value }: { label: React.ReactNode; value?: string | null }) {
-  if (!value) return null;
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.55rem 0', borderBottom: '1px solid var(--border-soft,#e2e8f0)', fontSize: '0.875rem' }}>
-      <span style={{ color: 'var(--text-secondary,#64748b)', display: 'flex', alignItems: 'center', gap: 5, minWidth: 140 }}>{label}</span>
-      <span style={{ color: 'var(--text-primary,#0f172a)', fontWeight: 500, flex: 1 }}>{value}</span>
-    </div>
-  );
-}
-

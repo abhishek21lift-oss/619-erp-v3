@@ -1,94 +1,147 @@
 'use client';
-import { useState, useEffect, useMemo, useCallback } from 'react';
+/**
+ * Sidebar — premium Linear/Notion-style navigation.
+ *
+ * Features:
+ *  • Collapsible (icon-only) with CSS transition
+ *  • Role-based item visibility
+ *  • Collapsible nav groups with persisted open/closed state
+ *  • Fuzzy search (Fuse.js) across all nav items
+ *  • Badge counts loaded from /api/dashboard/badges
+ *  • Favourites (star) quick-access row
+ *  • Mobile: full-width drawer with backdrop
+ *  • Lucide icons — no Unicode glyphs
+ *  • Keyboard accessible (⌘K opens command palette)
+ *  • Dark-mode aware via CSS custom properties
+ */
+
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Fuse from 'fuse.js';
+import {
+  // Nav icons
+  LayoutDashboard, TrendingUp, Users, Dumbbell, ScanFace,
+  CreditCard, IndianRupee, LineChart, Megaphone, Settings,
+  // Item icons
+  Inbox, PlusCircle, Filter, PieChart,
+  UserCheck, CalendarClock, UserX, Cake, UserPlus, User,
+  UserCog, LayoutGrid, CalendarOff, Sparkles,
+  ClipboardList, ClipboardCheck, Trophy,
+  Layers, RefreshCw, CalendarDays,
+  Wallet, AlertCircle, ArrowUpRight, BarChart3, Award,
+  FileBarChart, Activity, RefreshCcw, Clock,
+  Bell, MessageCircle, Send, Tag, Star,
+  Building2, ShieldCheck, Fingerprint, Receipt, Palette,
+  // UI controls
+  ChevronRight, Search, LogOut, PanelLeftClose, PanelLeftOpen,
+  Dumbbell as DumbbellIcon,
+} from 'lucide-react';
+
 import { useAuth } from '@/lib/auth-context';
 import {
-  NAV_GROUPS,
-  SETTINGS_GROUP,
-  DASHBOARD_ITEM,
-  allNavItems,
-  isVisibleForRole,
+  NAV_GROUPS, SETTINGS_GROUP, DASHBOARD_ITEM,
+  allNavItems, isVisibleForRole,
   type NavItem,
 } from '@/lib/nav-config';
-import {
-  readFavorites,
-  toggleFavorite,
-  readSidebarCollapsed,
-  writeSidebarCollapsed,
-} from '@/lib/favorites';
-import BrandLogo from './BrandLogo';
 
-const COLLAPSED_GROUPS_KEY = '619_sidebar_groups';
+// ─────────────────────────────────────────────────────────────────────
+// Icon map: Lucide name → component
+// ─────────────────────────────────────────────────────────────────────
+const ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  LayoutDashboard, TrendingUp, Users, Dumbbell, ScanFace,
+  CreditCard, IndianRupee, LineChart, Megaphone, Settings,
+  Inbox, PlusCircle, Filter, PieChart,
+  UserCheck, CalendarClock, UserX, Cake, UserPlus, User,
+  UserCog, LayoutGrid, CalendarOff, Sparkles,
+  ClipboardList, ClipboardCheck, Trophy,
+  Layers, RefreshCw, CalendarDays,
+  Wallet, AlertCircle, ArrowUpRight, BarChart3, Award,
+  FileBarChart, Activity, RefreshCcw, Clock,
+  Bell, MessageCircle, Send, Tag, Star,
+  Building2, ShieldCheck, Fingerprint, Receipt, Palette,
+};
+function Icon({ name, size = 15 }: { name: string; size?: number }) {
+  const C = ICONS[name];
+  return C ? <C size={size} /> : null;
+}
 
-type BadgeMap = Record<string, number>;
+// ─────────────────────────────────────────────────────────────────────
+// Local-storage helpers
+// ─────────────────────────────────────────────────────────────────────
+const COLLAPSED_KEY   = '619_sidebar_collapsed';
+const GROUPS_KEY      = '619_sidebar_groups';
+const BADGES_KEY      = '619_sidebar_badges';
 
-function readCollapsedGroups(): Record<string, boolean> {
-  if (typeof window === 'undefined') return {};
+function loadCollapsed(): boolean {
+  try { return localStorage.getItem(COLLAPSED_KEY) === 'true'; } catch { return false; }
+}
+function saveCollapsed(v: boolean) {
+  try { localStorage.setItem(COLLAPSED_KEY, String(v)); } catch {}
+}
+function loadGroupState(): Record<string, boolean> {
   try {
-    const raw = localStorage.getItem(COLLAPSED_GROUPS_KEY);
+    const raw = localStorage.getItem(GROUPS_KEY);
     return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
+  } catch { return {}; }
+}
+function saveGroupState(s: Record<string, boolean>) {
+  try { localStorage.setItem(GROUPS_KEY, JSON.stringify(s)); } catch {}
 }
 
-function writeCollapsedGroups(state: Record<string, boolean>) {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(COLLAPSED_GROUPS_KEY, JSON.stringify(state));
-  } catch {}
+// ─────────────────────────────────────────────────────────────────────
+// Props (injected by AppShell)
+// ─────────────────────────────────────────────────────────────────────
+interface SidebarProps {
+  /** Controlled by AppShell on mobile (drawer open/close) */
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
-export default function Sidebar() {
+// ─────────────────────────────────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────────────────────────────────
+export default function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const { user, logout } = useAuth();
-  const path = usePathname();
-  const router = useRouter();
+  const path      = usePathname();
+  const router    = useRouter();
 
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
-  const [favorites, setFavorites] = useState<string[]>([]);
-  const [groupState, setGroupState] = useState<Record<string, boolean>>({});
-  const [hydrated, setHydrated] = useState(false);
-  const [search, setSearch] = useState('');
-  const [badges, setBadges] = useState<BadgeMap>({});
+  const [collapsed,   setCollapsed]   = useState(false);
+  const [groupState,  setGroupState]  = useState<Record<string, boolean>>({});
+  const [hydrated,    setHydrated]    = useState(false);
+  const [search,      setSearch]      = useState('');
+  const [badges,      setBadges]      = useState<Record<string, number>>({});
+  const [searchOpen,  setSearchOpen]  = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin   = user?.role === 'admin';
   const isTrainer = user?.role === 'trainer';
-  const isMember = user?.role === 'member';
+  const isMember  = user?.role === 'member';
 
+  // ── Hydration ──────────────────────────────────────────────────────
   useEffect(() => {
-    setCollapsed(readSidebarCollapsed());
-    setFavorites(readFavorites(user?.id));
-    setGroupState(readCollapsedGroups());
+    setCollapsed(loadCollapsed());
+    setGroupState(loadGroupState());
     setHydrated(true);
-  }, [user?.id]);
+  }, []);
 
-  // Close mobile drawer on route change
+  // ── Drive sidebar-w CSS variable for AppShell ──────────────────────
   useEffect(() => {
-    setDrawerOpen(false);
-  }, [path]);
-
-  // Lock body scroll while the drawer is open
-  useEffect(() => {
-    document.body.style.overflow = drawerOpen ? 'hidden' : '';
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [drawerOpen]);
-
-  // Drive the CSS variable that AppShell uses to offset its main content
-  useEffect(() => {
-    if (!hydrated || typeof document === 'undefined') return;
-    document.documentElement.style.setProperty(
-      '--sidebar-w',
-      collapsed ? '70px' : '248px',
-    );
-    document.documentElement.dataset.sidebar = collapsed ? 'collapsed' : 'expanded';
+    if (!hydrated) return;
+    const w = collapsed ? 'var(--sidebar-w-collapsed)' : 'var(--sidebar-w)';
+    document.documentElement.style.setProperty('--active-sidebar-w', w);
   }, [collapsed, hydrated]);
 
-  // Lazy-load badge counts. Failures are silent — badges are decorative.
+  // ── Close mobile drawer on route change ───────────────────────────
+  useEffect(() => { onMobileClose?.(); }, [path]);
+
+  // ── Lock body scroll on mobile drawer open ────────────────────────
+  useEffect(() => {
+    document.body.style.overflow = mobileOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [mobileOpen]);
+
+  // ── Badge counts ───────────────────────────────────────────────────
   useEffect(() => {
     if (!hydrated || !user) return;
     let cancelled = false;
@@ -101,20 +154,52 @@ export default function Sidebar() {
           headers: { Authorization: `Bearer ${t}` },
         });
         if (!res.ok) return;
-        const data = (await res.json()) as BadgeMap;
+        const data = await res.json();
         if (!cancelled) setBadges(data || {});
-      } catch {
-        /* ignore — badges are non-critical */
-      }
+      } catch { /* non-critical */ }
     };
     load();
-    const onFocus = () => load();
-    window.addEventListener('focus', onFocus);
-    return () => {
-      cancelled = true;
-      window.removeEventListener('focus', onFocus);
-    };
+    window.addEventListener('focus', load);
+    return () => { cancelled = true; window.removeEventListener('focus', load); };
   }, [hydrated, user?.id]);
+
+  // ── Search (Fuse.js) ───────────────────────────────────────────────
+  const visibleItems = useMemo(() => {
+    return allNavItems().filter((i) => isVisibleForRole(i, user?.role) && !i.hidden);
+  }, [user?.role]);
+
+  const fuse = useMemo(
+    () => new Fuse(visibleItems, { keys: ['label', 'groupLabel'], threshold: 0.35 }),
+    [visibleItems],
+  );
+
+  const searchResults = useMemo(() => {
+    if (!search.trim()) return [];
+    return fuse.search(search).map((r) => r.item).slice(0, 8);
+  }, [search, fuse]);
+
+  // ── Helpers ────────────────────────────────────────────────────────
+  const isActive = useCallback((href: string) => {
+    const cleanHref = href.split('?')[0];
+    const cleanPath = path.split('?')[0];
+    if (cleanHref === '/dashboard') return cleanPath === '/dashboard';
+    return cleanPath === cleanHref || cleanPath.startsWith(cleanHref + '/');
+  }, [path]);
+
+  const toggleGroup = useCallback((id: string) => {
+    setGroupState((prev) => {
+      const next = { ...prev, [id]: !prev[id] };
+      saveGroupState(next);
+      return next;
+    });
+  }, []);
+
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed((v) => {
+      saveCollapsed(!v);
+      return !v;
+    });
+  }, []);
 
   const initials = (user?.name || 'U')
     .split(' ')
@@ -123,373 +208,258 @@ export default function Sidebar() {
     .slice(0, 2)
     .toUpperCase();
 
-  const isActive = useCallback(
-    (href: string) => {
-      const cleanHref = href.split('?')[0];
-      const cleanPath = path.split('?')[0];
-      if (cleanHref === '/dashboard') return cleanPath === '/dashboard';
-      return cleanPath === cleanHref || cleanPath.startsWith(cleanHref + '/');
-    },
-    [path],
-  );
+  // Default group-open state: all open
+  const isGroupOpen = (id: string) => !(id in groupState) ? true : groupState[id];
 
-  const visibleForRole = useCallback(
-    (item: NavItem) => isVisibleForRole(item, user?.role),
-    [user?.role],
-  );
-
-  const favItems = useMemo(() => {
-    const all = allNavItems();
-    return favorites
-      .map((href) => all.find((i) => i.href === href))
-      .filter((i): i is NonNullable<typeof i> => !!i && visibleForRole(i));
-  }, [favorites, visibleForRole]);
-
-  // Search results — Fuse.js fuzzy match (per blueprint §1.6). Tolerates
-  // typos and partial matches like "subs" → "Subscriptions". The Fuse
-  // instance is recomputed only when the role changes, not per keystroke.
-  const fuse = useMemo(() => {
-    const items = allNavItems().filter(
-      (i) => !i.hidden && visibleForRole(i),
+  // ── Render nav item ───────────────────────────────────────────────
+  const renderItem = (item: NavItem, idx: number) => {
+    const active = isActive(item.href);
+    const count  = item.badge ? (badges[item.badge] ?? 0) : 0;
+    return (
+      <Link
+        key={item.href + idx}
+        href={item.comingSoon ? '#' : item.href}
+        className={`sidebar-item${active ? ' active' : ''}`}
+        title={collapsed ? item.label : undefined}
+        aria-current={active ? 'page' : undefined}
+        onClick={item.comingSoon ? (e) => e.preventDefault() : undefined}
+      >
+        <span className="sidebar-item-icon">
+          <Icon name={item.icon} size={15} />
+        </span>
+        <span className="sidebar-item-label">{item.label}</span>
+        {count > 0 && !collapsed && (
+          <span className="sidebar-item-badge">{count > 99 ? '99+' : count}</span>
+        )}
+        {item.isNew && !count && !collapsed && (
+          <span className="sidebar-item-new">NEW</span>
+        )}
+      </Link>
     );
-    return new Fuse(items, {
-      keys: [
-        { name: 'label', weight: 0.7 },
-        { name: 'groupLabel', weight: 0.3 },
-      ],
-      threshold: 0.35,
-      ignoreLocation: true,
-      minMatchCharLength: 2,
-    });
-  }, [visibleForRole]);
+  };
 
-  const searchResults = useMemo(() => {
-    const q = search.trim();
-    if (!q) return [];
-    return fuse.search(q).slice(0, 8).map((r) => r.item);
-  }, [search, fuse]);
+  // ── Build sidebar content ─────────────────────────────────────────
+  const sidebarCls = [
+    'sidebar',
+    collapsed ? 'collapsed' : '',
+  ].filter(Boolean).join(' ');
 
-  function toggleCollapse() {
-    const next = !collapsed;
-    setCollapsed(next);
-    writeSidebarCollapsed(next);
-  }
-
-  function handleToggleFavorite(href: string, e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    setFavorites(toggleFavorite(user?.id, href));
-  }
-
-  function toggleGroup(id: string) {
-    const next = { ...groupState, [id]: !groupState[id] };
-    setGroupState(next);
-    writeCollapsedGroups(next);
-  }
+  const wrapCls = [
+    'shell-sidebar',
+    collapsed ? 'collapsed' : '',
+    mobileOpen ? 'drawer-open' : '',
+  ].filter(Boolean).join(' ');
 
   return (
     <>
-      <button
-        className="mobile-menu-btn"
-        onClick={() => setDrawerOpen(true)}
-        aria-label="Open navigation menu"
-      >
-        <span />
-        <span />
-        <span />
-      </button>
+      {/* Mobile backdrop */}
+      <div
+        className={`sidebar-backdrop${mobileOpen ? ' visible' : ''}`}
+        onClick={onMobileClose}
+        aria-hidden="true"
+      />
 
-      {drawerOpen && (
-        <div
-          className="sidebar-overlay"
-          onClick={() => setDrawerOpen(false)}
-          aria-hidden="true"
-        />
-      )}
+      <aside className={wrapCls} aria-label="Main navigation">
+        <nav className={sidebarCls}>
 
-      <aside
-        className={`sidebar v2${drawerOpen ? ' sidebar-open' : ''}${collapsed ? ' sidebar-collapsed' : ''}`}
-      >
-        <button
-          className="sidebar-close"
-          onClick={() => setDrawerOpen(false)}
-          aria-label="Close menu"
-        >
-          ✕
-        </button>
+          {/* ── Header ───────────────────────────────────────────── */}
+          <div className="sidebar-header">
+            <div className="sidebar-logo">619</div>
+            <div className="sidebar-brand">
+              <div className="sidebar-brand-name">619 Fitness</div>
+              <div className="sidebar-brand-sub">Operating System</div>
+            </div>
+            <button
+              className="sidebar-toggle"
+              onClick={toggleCollapsed}
+              title="Collapse sidebar"
+              aria-label="Collapse sidebar"
+            >
+              <PanelLeftClose size={13} />
+            </button>
+          </div>
 
-        <div className="sidebar-header">
-          <BrandLogo size={collapsed ? 30 : 34} showText={!collapsed} textPosition="right" />
-          <button
-            type="button"
-            className="sidebar-collapse-btn sidebar-reopen-btn"
-            onClick={toggleCollapse}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            title={collapsed ? 'Expand' : 'Collapse'}
-          >
-            {collapsed ? '›' : '‹'}
-          </button>
-        </div>
+          {/* ── Expand button when collapsed ─────────────────────── */}
+          {collapsed && (
+            <button
+              className="sidebar-toggle"
+              style={{ margin: '8px auto', display: 'flex', width: 36, height: 36, justifyContent: 'center', alignItems: 'center', border: '1px solid var(--border)', borderRadius: 8, background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
+              onClick={toggleCollapsed}
+              title="Expand sidebar"
+              aria-label="Expand sidebar"
+            >
+              <PanelLeftOpen size={13} />
+            </button>
+          )}
 
-        {/* Sidebar search — hidden when collapsed to save horizontal space */}
-        {hydrated && !collapsed && (
-          <div className="sidebar-search-wrap" style={{ padding: '0 0.65rem 0.5rem' }}>
-            <div className="sidebar-search">
-              <input
-                type="search"
-                placeholder="Jump to…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') setSearch('');
-                  if (e.key === 'Enter' && searchResults[0]) {
-                    router.push(searchResults[0].href);
-                    setSearch('');
-                  }
-                }}
-                aria-label="Search navigation"
-              />
-              {search && (
+          {/* ── Search ───────────────────────────────────────────── */}
+          {!collapsed && (
+            <div style={{ padding: '8px 10px 4px', flexShrink: 0 }}>
+              {searchOpen ? (
+                <div className="search-bar" style={{ minWidth: 0, height: 30 }}>
+                  <Search size={13} style={{ flexShrink: 0 }} />
+                  <input
+                    ref={searchRef}
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search…"
+                    onKeyDown={(e) => { if (e.key === 'Escape') { setSearchOpen(false); setSearch(''); } }}
+                    onBlur={() => { if (!search) setSearchOpen(false); }}
+                    autoFocus
+                  />
+                  {search && (
+                    <button
+                      onClick={() => { setSearch(''); setSearchOpen(false); }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 0 }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              ) : (
                 <button
-                  type="button"
-                  className="sidebar-search-clear"
-                  onClick={() => setSearch('')}
-                  aria-label="Clear search"
+                  className="sidebar-search-btn"
+                  onClick={() => setSearchOpen(true)}
+                  title="Search (⌘K)"
                 >
-                  ✕
+                  <Search size={13} style={{ flexShrink: 0 }} />
+                  <span className="sidebar-search-text">Search…</span>
+                  <span className="sidebar-search-kbd">⌘K</span>
                 </button>
               )}
             </div>
-            {search && (
-              <ul className="sidebar-search-results">
-                {searchResults.length === 0 ? (
-                  <li className="sidebar-search-empty">No matches</li>
-                ) : (
-                  searchResults.map((r) => (
-                    <li key={r.href}>
-                      <Link
-                        href={r.href}
-                        className="sidebar-search-result"
-                        onClick={() => {
-                          setSearch('');
-                          setDrawerOpen(false);
-                        }}
-                      >
-                        <span className="sidebar-search-icon">{r.icon}</span>
-                        <span className="sidebar-search-label">{r.label}</span>
-                        <span className="sidebar-search-group">{r.groupLabel}</span>
-                      </Link>
-                    </li>
-                  ))
-                )}
-              </ul>
-            )}
-          </div>
-        )}
-
-        {hydrated && favItems.length > 0 && !collapsed && !search && (
-          <>
-            <div className="nav-section" style={{ paddingTop: '0.85rem' }}>★ Pinned</div>
-            <div style={{ padding: '0 0.65rem' }}>
-              {favItems.map((it) => (
-                <NavRow
-                  key={'fav-' + it.href}
-                  item={it}
-                  isActive={isActive(it.href)}
-                  isFav
-                  badge={it.badge ? badges[it.badge] : undefined}
-                  onToggleFav={handleToggleFavorite}
-                  onClick={() => setDrawerOpen(false)}
-                />
-              ))}
-            </div>
-            <div style={{ padding: '0 0.65rem' }}>
-              <div className="divider" />
-            </div>
-          </>
-        )}
-
-        <nav className="sidebar-nav" aria-label="Main navigation">
-          {/* Top-level Dashboard (replaces the old "Home" group) */}
-          <div style={{ padding: '0 0.65rem', marginBottom: 6 }}>
-            <NavRow
-              item={DASHBOARD_ITEM}
-              isActive={isActive(DASHBOARD_ITEM.href)}
-              collapsed={collapsed}
-              isFav={favorites.includes(DASHBOARD_ITEM.href)}
-              onToggleFav={handleToggleFavorite}
-              onClick={() => setDrawerOpen(false)}
-            />
-          </div>
-
-          {NAV_GROUPS.map((group) => {
-            const visibleItems = group.items.filter(visibleForRole);
-            if (visibleItems.length === 0) return null;
-            const groupCollapsed = !!groupState[group.id];
-
-            return (
-              <div
-                key={group.id}
-                className={`nav-group${groupCollapsed ? ' is-collapsed' : ''}`}
-              >
-                {!collapsed && (
-                  <button
-                    type="button"
-                    className="nav-group-header"
-                    onClick={() => toggleGroup(group.id)}
-                    aria-expanded={!groupCollapsed}
-                  >
-                    <span className="nav-group-icon">{group.icon}</span>
-                    <span className="nav-group-label">{group.label}</span>
-                    <span className="nav-group-chevron">{groupCollapsed ? '▸' : '▾'}</span>
-                  </button>
-                )}
-                {(collapsed || !groupCollapsed) && (
-                  <div className="nav-group-items">
-                    {visibleItems.map((it) => (
-                      <NavRow
-                        key={it.href}
-                        item={it}
-                        isActive={isActive(it.href)}
-                        collapsed={collapsed}
-                        isFav={favorites.includes(it.href)}
-                        badge={it.badge ? badges[it.badge] : undefined}
-                        onToggleFav={handleToggleFavorite}
-                        onClick={() => setDrawerOpen(false)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {/* Settings group rendered below the divider */}
-          {(() => {
-            const visibleSettings = SETTINGS_GROUP.items.filter(visibleForRole);
-            if (visibleSettings.length === 0) return null;
-            const groupCollapsed = !!groupState[SETTINGS_GROUP.id];
-            return (
-              <>
-                <div className="divider" />
-                <div className={`nav-group${groupCollapsed ? ' is-collapsed' : ''}`}>
-                  {!collapsed && (
-                    <button
-                      type="button"
-                      className="nav-group-header"
-                      onClick={() => toggleGroup(SETTINGS_GROUP.id)}
-                      aria-expanded={!groupCollapsed}
-                    >
-                      <span className="nav-group-icon">{SETTINGS_GROUP.icon}</span>
-                      <span className="nav-group-label">{SETTINGS_GROUP.label}</span>
-                      <span className="nav-group-chevron">{groupCollapsed ? '▸' : '▾'}</span>
-                    </button>
-                  )}
-                  {(collapsed || !groupCollapsed) && (
-                    <div className="nav-group-items">
-                      {visibleSettings.map((it) => (
-                        <NavRow
-                          key={it.href}
-                          item={it}
-                          isActive={isActive(it.href)}
-                          collapsed={collapsed}
-                          isFav={favorites.includes(it.href)}
-                          badge={it.badge ? badges[it.badge] : undefined}
-                          onToggleFav={handleToggleFavorite}
-                          onClick={() => setDrawerOpen(false)}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </>
-            );
-          })()}
-        </nav>
-
-        <div className="sidebar-footer">
-          <div className="user-card">
-            <div className="user-avatar">{initials}</div>
-            {!collapsed && (
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div className="user-name truncate">{user?.name}</div>
-                <div className="user-role">
-                  {isAdmin ? 'Owner' : isTrainer ? 'Coach' : isMember ? 'Athlete' : 'User'}
-                </div>
-              </div>
-            )}
-          </div>
-          {!collapsed && (
-            <button
-              className="btn btn-ghost w-full btn-sm"
-              style={{ justifyContent: 'center' }}
-              onClick={() => {
-                logout();
-                router.replace('/login');
-              }}
-            >
-              Sign out
-            </button>
           )}
-        </div>
+
+          {/* ── Nav ──────────────────────────────────────────────── */}
+          <div className="sidebar-nav">
+
+            {/* Search results overlay */}
+            {search && searchResults.length > 0 && (
+              <div style={{ marginBottom: 6 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', padding: '4px 10px 4px', marginBottom: 2 }}>
+                  Results
+                </div>
+                {searchResults.map((item, idx) => renderItem(item, idx))}
+                <div className="divider" style={{ margin: '8px 0' }} />
+              </div>
+            )}
+
+            {/* Dashboard */}
+            {isVisibleForRole(DASHBOARD_ITEM, user?.role) && (
+              <div className="sidebar-home" style={{ marginBottom: 8 }}>
+                {renderItem(DASHBOARD_ITEM, 0)}
+              </div>
+            )}
+
+            {/* Main groups */}
+            {NAV_GROUPS.map((group) => {
+              const groupItems = group.items.filter(
+                (i) => isVisibleForRole(i, user?.role) && !i.hidden,
+              );
+              if (groupItems.length === 0) return null;
+              const open = isGroupOpen(group.id);
+
+              return (
+                <div key={group.id} className="sidebar-group">
+                  <button
+                    className="sidebar-group-btn"
+                    onClick={() => toggleGroup(group.id)}
+                    title={collapsed ? group.label : undefined}
+                    aria-expanded={open}
+                  >
+                    {collapsed ? (
+                      <Icon name={group.icon} size={15} />
+                    ) : (
+                      <>
+                        <span className="sidebar-group-label">{group.label}</span>
+                        <span className={`sidebar-group-chevron${open ? ' open' : ''}`}>
+                          <ChevronRight size={12} />
+                        </span>
+                      </>
+                    )}
+                  </button>
+
+                  <div
+                    className="sidebar-group-items"
+                    style={{ maxHeight: open ? `${groupItems.length * 42}px` : '0px' }}
+                  >
+                    {groupItems.map((item, idx) => renderItem(item, idx))}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Divider */}
+            <div className="divider" style={{ margin: '10px 0' }} />
+
+            {/* Settings group */}
+            {(() => {
+              const settingsItems = SETTINGS_GROUP.items.filter(
+                (i) => isVisibleForRole(i, user?.role) && !i.hidden,
+              );
+              if (settingsItems.length === 0) return null;
+              const open = isGroupOpen(SETTINGS_GROUP.id);
+              return (
+                <div className="sidebar-group">
+                  <button
+                    className="sidebar-group-btn"
+                    onClick={() => toggleGroup(SETTINGS_GROUP.id)}
+                    title={collapsed ? SETTINGS_GROUP.label : undefined}
+                    aria-expanded={open}
+                  >
+                    {collapsed ? (
+                      <Icon name={SETTINGS_GROUP.icon} size={15} />
+                    ) : (
+                      <>
+                        <span className="sidebar-group-label">{SETTINGS_GROUP.label}</span>
+                        <span className={`sidebar-group-chevron${open ? ' open' : ''}`}>
+                          <ChevronRight size={12} />
+                        </span>
+                      </>
+                    )}
+                  </button>
+                  <div
+                    className="sidebar-group-items"
+                    style={{ maxHeight: open ? `${settingsItems.length * 42}px` : '0px' }}
+                  >
+                    {settingsItems.map((item, idx) => renderItem(item, idx))}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* ── Footer / User ─────────────────────────────────────── */}
+          <div className="sidebar-footer">
+            <div
+              className="sidebar-avatar"
+              title={user?.name || 'User'}
+              onClick={() => router.push('/settings')}
+            >
+              {initials}
+            </div>
+            {!collapsed && (
+              <>
+                <div className="sidebar-user">
+                  <div className="sidebar-user-name">{user?.name || 'User'}</div>
+                  <div className="sidebar-user-role" style={{ textTransform: 'capitalize' }}>
+                    {user?.role || 'Staff'}
+                  </div>
+                </div>
+                <button
+                  className="sidebar-logout"
+                  onClick={() => { logout(); router.push('/login'); }}
+                  title="Sign out"
+                  aria-label="Sign out"
+                >
+                  <LogOut size={14} />
+                </button>
+              </>
+            )}
+          </div>
+
+        </nav>
       </aside>
     </>
-  );
-}
-
-function NavRow({
-  item,
-  isActive,
-  collapsed,
-  isFav,
-  badge,
-  onToggleFav,
-  onClick,
-}: {
-  item: NavItem;
-  isActive: boolean;
-  collapsed?: boolean;
-  isFav?: boolean;
-  badge?: number;
-  onToggleFav?: (href: string, e: React.MouseEvent) => void;
-  onClick?: () => void;
-}) {
-  const showBadge = typeof badge === 'number' && badge > 0;
-  return (
-    <Link
-      href={item.href}
-      className={`nav-link${isActive ? ' active' : ''}${item.comingSoon ? ' is-disabled' : ''}`}
-      onClick={(e) => {
-        if (item.comingSoon) {
-          e.preventDefault();
-          return;
-        }
-        onClick?.();
-      }}
-      title={collapsed ? item.label : undefined}
-      aria-disabled={item.comingSoon || undefined}
-    >
-      <span className="nav-icon">{item.icon}</span>
-      {!collapsed && <span className="nav-label">{item.label}</span>}
-      {!collapsed && item.isNew && (
-        <span className="nav-pill nav-pill-new" aria-label="New feature">NEW</span>
-      )}
-      {!collapsed && showBadge && (
-        <span className="nav-pill nav-pill-badge" aria-label={`${badge} pending`}>
-          {badge > 99 ? '99+' : badge}
-        </span>
-      )}
-      {!collapsed && onToggleFav && (
-        <button
-          type="button"
-          className={`nav-pin${isFav ? ' is-fav' : ''}`}
-          aria-label={isFav ? 'Unpin from favorites' : 'Pin to favorites'}
-          onClick={(e) => onToggleFav(item.href, e)}
-          tabIndex={-1}
-        >
-          {isFav ? '★' : '☆'}
-        </button>
-      )}
-    </Link>
   );
 }

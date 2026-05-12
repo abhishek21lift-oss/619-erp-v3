@@ -1,102 +1,68 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
-import { usePathname } from 'next/navigation';
+/**
+ * TopBar (PremiumHeader)
+ *
+ * Sticky glassmorphic top bar with:
+ *  • Mobile hamburger (triggers Sidebar drawer)
+ *  • Breadcrumb / page title (auto-resolved from pathname)
+ *  • ⌘K shortcut to fire the command palette
+ *  • Dark/light mode toggle (persisted)
+ *  • Notification bell
+ *  • User avatar (click → settings)
+ */
+
+import { useEffect, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import NotificationBell from './NotificationBell';
-import BrandLogo from './BrandLogo';
+import { findItemByPath } from '@/lib/nav-config';
+import { Menu, Moon, Sun, Bell, Settings } from 'lucide-react';
 
-const PAGE_TITLES: Record<string, string> = {
-  '/dashboard': 'Dashboard',
-  '/clients': 'Members',
-  '/clients/new': 'Add Member',
-  '/members/active': 'Active Members',
-  '/members/expiring': 'Expiring Members',
-  '/members/lapsed': 'Lapsed Members',
-  '/members/birthdays': 'Birthday List',
-  '/sales/enquiry': 'Add Enquiry',
-  '/sales/leads': 'Leads & Follow-ups',
-  '/plans': 'Membership Plans',
-  '/memberships/subscriptions': 'Subscriptions',
-  '/payments': 'Payments',
-  '/finance/dues': 'Outstanding Dues',
-  '/finance/collection': 'Collection Report',
-  '/finance/pl': 'Profit & Loss',
-  '/finance/forecast': 'Revenue Forecast',
-  '/trainers': 'Trainers',
-  '/trainer/dashboard': 'Coach Dashboard',
-  '/training/transformations': 'Transformations',
-  '/attendance': 'Attendance',
-  '/attendance/staff': 'Staff Attendance',
-  '/insights/traffic': 'Traffic Analysis',
-  '/insights/renewal': 'Renewal Analysis',
-  '/insights/sessions': 'Session Analysis',
-  '/sales/funnel': 'Conversion Analysis',
-  '/sales/sources': 'Lead Sources',
-  '/operations/leaderboard': 'Leaderboard',
-  '/reports': 'All Reports',
-  '/settings': 'Settings',
-};
-
-interface PremiumHeaderProps {
-  title?: string;
-  onSidebarToggle?: () => void;
+interface Props {
+  /** Propagated up from AppShell to toggle mobile drawer */
+  onMenuClick?: () => void;
 }
 
-export default function PremiumHeader({ title, onSidebarToggle }: PremiumHeaderProps) {
+export default function PremiumHeader({ onMenuClick }: Props) {
   const { user } = useAuth();
+  const router   = useRouter();
   const pathname = usePathname();
+
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [hydrated, setHydrated] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Initialize theme from localStorage
+  // ── Theme init ─────────────────────────────────────────────────────
   useEffect(() => {
-    if (typeof window === 'undefined') return;
     try {
-      const saved = localStorage.getItem('619_theme') as 'light' | 'dark' | null;
-      const initial = saved || 'light';
-      setTheme(initial);
-      document.documentElement.setAttribute('data-theme', initial);
-      setHydrated(true);
-    } catch {
-      setTheme('light');
-      setHydrated(true);
-    }
+      const saved = (localStorage.getItem('619_theme') as 'light' | 'dark') ?? 'light';
+      setTheme(saved);
+      document.documentElement.setAttribute('data-theme', saved);
+    } catch {}
+    setHydrated(true);
   }, []);
 
-  // Toggle theme
   const toggleTheme = () => {
     if (!hydrated) return;
-    const newTheme = theme === 'light' ? 'dark' : 'light';
-    setTheme(newTheme);
-    document.documentElement.setAttribute('data-theme', newTheme);
-    try {
-      localStorage.setItem('619_theme', newTheme);
-    } catch {}
+    const next = theme === 'light' ? 'dark' : 'light';
+    setTheme(next);
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('619_theme', next); } catch {}
   };
 
-  // Handle Cmd+K search
+  // ── ⌘K → command palette ─────────────────────────────────────────
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
-        searchInputRef.current?.focus();
-        // Fire custom event for search
-        window.dispatchEvent(
-          new CustomEvent('search-trigger', { detail: { source: 'header' } })
-        );
+        window.dispatchEvent(new CustomEvent('619-cmd-palette'));
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  // Determine page title
-  const getPageTitle = (): string => {
-    if (title) return title;
-    const cleanPath = pathname.split('?')[0];
-    return PAGE_TITLES[cleanPath] || 'Page';
-  };
+  // ── Page title from nav-config ────────────────────────────────────
+  const navItem   = findItemByPath(pathname);
+  const pageTitle = navItem?.label ?? 'Page';
 
   const initials = (user?.name || 'U')
     .split(' ')
@@ -106,66 +72,84 @@ export default function PremiumHeader({ title, onSidebarToggle }: PremiumHeaderP
     .toUpperCase();
 
   return (
-    <header className="ph-root">
-      <div className="ph-left">
+    <header className="shell-topbar">
+      {/* Mobile hamburger */}
+      <button
+        className="topbar-burger"
+        onClick={onMenuClick}
+        aria-label="Open navigation"
+      >
+        <Menu size={16} />
+      </button>
+
+      {/* Page title */}
+      <h1 className="topbar-title">{pageTitle}</h1>
+
+      {/* Right actions */}
+      <div className="topbar-right">
+        {/* ⌘K search hint */}
         <button
-          className="ph-hamburger"
-          onClick={onSidebarToggle}
-          aria-label="Toggle sidebar"
-          title="Toggle sidebar"
+          className="btn btn-outline btn-sm"
+          style={{ gap: 8, color: 'var(--text-muted)', fontSize: 12, display: 'flex', alignItems: 'center', minWidth: 140 }}
+          onClick={() => window.dispatchEvent(new CustomEvent('619-cmd-palette'))}
+          title="Search — ⌘K"
         >
-          <span />
-          <span />
-          <span />
+          <span style={{ flex: 1, textAlign: 'left' }}>Search…</span>
+          <kbd style={{ fontSize: 10, fontFamily: 'var(--font-mono,monospace)', padding: '1px 5px', borderRadius: 4, background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}>⌘K</kbd>
         </button>
-        {/* Logo shown only on mobile (sidebar hidden); hidden on desktop */}
-        <span className="ph-mobile-logo">
-          <BrandLogo size={30} showText={false} />
-        </span>
-        <h1 className="ph-title">{getPageTitle()}</h1>
-      </div>
 
-      <div className="ph-center">
-        <div className="ph-search">
-          <button
-            className="ph-search-trigger"
-            onClick={() => {
-              searchInputRef.current?.focus();
-              window.dispatchEvent(
-                new CustomEvent('search-trigger', { detail: { source: 'header' } })
-              );
-            }}
-            aria-label="Open search"
-          >
-            <span className="ph-search-icon">⌕</span>
-            <span className="ph-search-text">Search...</span>
-            <span className="ph-search-kbd">⌘K</span>
-          </button>
-          <input
-            ref={searchInputRef}
-            type="text"
-            className="ph-search-input"
-            placeholder="Search..."
-            style={{ display: 'none' }}
-          />
-        </div>
-      </div>
-
-      <div className="ph-right">
+        {/* Theme toggle */}
         <button
-          className="ph-theme-btn"
+          className="btn btn-ghost btn-icon btn-sm"
           onClick={toggleTheme}
-          aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-          title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+          title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+          aria-label="Toggle theme"
         >
-          {theme === 'light' ? '🌙' : '☀️'}
+          {hydrated ? (
+            theme === 'light' ? <Moon size={15} /> : <Sun size={15} />
+          ) : (
+            <span style={{ width: 15 }} />
+          )}
         </button>
 
-        <NotificationBell />
+        {/* Notification bell */}
+        <button
+          className="btn btn-ghost btn-icon btn-sm"
+          title="Notifications"
+          aria-label="Notifications"
+          style={{ position: 'relative' }}
+        >
+          <Bell size={15} />
+        </button>
 
-        <div className="ph-avatar">
+        {/* Settings shortcut */}
+        <button
+          className="btn btn-ghost btn-icon btn-sm"
+          onClick={() => router.push('/settings')}
+          title="Settings"
+          aria-label="Settings"
+        >
+          <Settings size={15} />
+        </button>
+
+        {/* Avatar */}
+        <button
+          onClick={() => router.push('/settings')}
+          title={user?.name ?? 'Account'}
+          aria-label="Account settings"
+          style={{
+            width: 30, height: 30, borderRadius: '50%',
+            background: 'var(--gradient-brand, linear-gradient(135deg,#dc2626,#b91c1c))',
+            color: '#fff', border: 'none', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 11, fontWeight: 700, flexShrink: 0,
+            transition: 'box-shadow 120ms',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.boxShadow = '0 0 0 3px var(--brand-soft)')}
+          onMouseLeave={(e) => (e.currentTarget.style.boxShadow = 'none')}
+        >
           {initials}
-        </div>
+        </button>
       </div>
     </header>
   );

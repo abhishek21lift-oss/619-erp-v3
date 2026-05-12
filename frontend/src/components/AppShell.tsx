@@ -1,24 +1,33 @@
 'use client';
+/**
+ * AppShell — root layout wrapper for every authenticated page.
+ * Sidebar (fixed + collapsible), sticky topbar, main content area.
+ */
+import { useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
 import PremiumHeader from './PremiumHeader';
 
-interface Props {
+interface AppShellProps {
   children: React.ReactNode;
   title?: string;
 }
 
-export default function AppShell({ children, title }: Props) {
+export default function AppShell({ children, title }: AppShellProps) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    const listener = (e: MediaQueryListEvent) => { if (e.matches) setMobileOpen(false); };
+    mq.addEventListener('change', listener);
+    return () => mq.removeEventListener('change', listener);
+  }, []);
+
   return (
     <div className="shell-root">
-      <Sidebar />
-      {/* Ghost spacer: real flex child whose width matches the fixed sidebar,
-          so shell-body is correctly offset without margin-left tricks */}
-      <div className="shell-spacer" aria-hidden="true" />
+      <Sidebar mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
       <div className="shell-body">
-        <PremiumHeader title={title} />
-        <main className="shell-main">
-          {children}
-        </main>
+        <PremiumHeader onMenuClick={() => setMobileOpen(true)} />
+        <main className="shell-main">{children}</main>
       </div>
     </div>
   );

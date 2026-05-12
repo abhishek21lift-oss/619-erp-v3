@@ -1,392 +1,438 @@
 'use client';
+/**
+ * Membership Plans Page — premium SaaS rebuild.
+ * Manages gym membership & PT plans stored in localStorage via /lib/plans.
+ */
 import { useState, useEffect, FormEvent } from 'react';
 import Guard from '@/components/Guard';
 import AppShell from '@/components/AppShell';
 import {
   StoredPlan, PlanKind, PlanDuration,
   DURATIONS, DEFAULT_PLANS, PLANS_KEY,
-  getStoredPlans, savePlans,
 } from '@/lib/plans';
+import {
+  Plus, Edit2, Trash2, Star, Zap, Package, X, CheckCircle,
+} from 'lucide-react';
 
-export default function PlansPage() {
+/* ─── Helpers ───────────────────────────────────────────── */
+function fmtINR(n: number) {
+  return '₹' + n.toLocaleString('en-IN');
+}
+
+/* ─── Plan Card ─────────────────────────────────────────── */
+function PlanCard({
+  plan, onEdit, onDelete,
+}: {
+  plan: StoredPlan;
+  onEdit: (p: StoredPlan) => void;
+  onDelete: (id: string) => void;
+}) {
+  const isPT = plan.kind === 'PT';
+  const accentColor = isPT ? '#7c3aed' : 'var(--brand)';
+
   return (
-    <Guard>
-      <PlansContent />
-    </Guard>
+    <div style={{
+      borderRadius: 14,
+      border: `1px solid ${plan.popular ? accentColor : 'var(--border)'}`,
+      background: 'var(--bg-card)',
+      padding: '22px 20px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10,
+      position: 'relative',
+      boxShadow: plan.popular ? `0 4px 20px ${accentColor}22` : 'var(--shadow-sm)',
+      transition: 'box-shadow 150ms',
+    }}>
+      {/* Badge */}
+      {plan.popular && (
+        <span style={{
+          position: 'absolute', top: -10, left: 16,
+          background: accentColor, color: '#fff',
+          fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 999,
+          letterSpacing: '0.3px',
+        }}>
+          ★ Popular
+        </span>
+      )}
+      {!plan.popular && isPT && (
+        <span style={{
+          position: 'absolute', top: -10, left: 16,
+          background: '#7c3aed', color: '#fff',
+          fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 999,
+        }}>
+          Personal Training
+        </span>
+      )}
+
+      {/* Duration badge */}
+      <div style={{ fontSize: 11, fontWeight: 700, color: accentColor, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+        {plan.duration}
+      </div>
+
+      {/* Name */}
+      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>{plan.name}</div>
+
+      {/* Price */}
+      <div>
+        <div style={{ fontSize: 26, fontWeight: 800, color: accentColor, letterSpacing: '-0.03em', lineHeight: 1 }}>
+          {fmtINR(plan.final_amount)}
+        </div>
+        {plan.discount > 0 && (
+          <div style={{ fontSize: 12, marginTop: 3, display: 'flex', gap: 6 }}>
+            <span style={{ textDecoration: 'line-through', color: 'var(--text-muted)' }}>{fmtINR(plan.base_amount)}</span>
+            <span style={{ color: 'var(--success)', fontWeight: 600 }}>save {fmtINR(plan.discount)}</span>
+          </div>
+        )}
+      </div>
+
+      {/* PT sessions */}
+      {isPT && plan.sessions_per_week && (
+        <div style={{
+          display: 'inline-block', padding: '3px 10px',
+          background: 'rgba(124,58,237,0.1)', color: '#7c3aed',
+          borderRadius: 999, fontSize: 11, fontWeight: 700,
+          textTransform: 'uppercase', letterSpacing: '0.3px',
+        }}>
+          {plan.sessions_per_week}× sessions / week
+        </div>
+      )}
+
+      {/* Features */}
+      <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
+        {plan.features.slice(0, 5).map((f, i) => (
+          <li key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+            <CheckCircle size={11} style={{ flexShrink: 0, color: accentColor }} /> {f}
+          </li>
+        ))}
+        {plan.features.length > 5 && (
+          <li style={{ fontSize: 11, color: 'var(--text-muted)' }}>+{plan.features.length - 5} more</li>
+        )}
+      </ul>
+
+      {/* Actions */}
+      <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+        <button className="btn btn-outline btn-sm" style={{ flex: 1 }} onClick={() => onEdit(plan)}>
+          <Edit2 size={12} /> Edit
+        </button>
+        <button className="btn btn-ghost btn-icon btn-sm" style={{ color: 'var(--danger)' }} onClick={() => onDelete(plan.id)}>
+          <Trash2 size={13} />
+        </button>
+      </div>
+    </div>
   );
 }
 
+/* ─── Plan Modal ─────────────────────────────────────────── */
+function PlanModal({
+  initial, onClose, onSave,
+}: {
+  initial: StoredPlan;
+  onClose: () => void;
+  onSave: (p: StoredPlan) => void;
+}) {
+  const [p, setP]                   = useState<StoredPlan>(initial);
+  const [featuresText, setFeatures] = useState(initial.features.join('\n'));
 
+  function set<K extends keyof StoredPlan>(k: K, v: StoredPlan[K]) {
+    setP((prev) => ({ ...prev, [k]: v }));
+  }
+
+  function recalc(base: number, disc: number) {
+    setP((prev) => ({ ...prev, base_amount: base, discount: disc, final_amount: Math.max(0, base - disc) }));
+  }
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!p.name.trim()) { alert('Plan name is required'); return; }
+    if (p.final_amount <= 0) { alert('Final amount must be > 0'); return; }
+    const features = featuresText.split('\n').map((s) => s.trim()).filter(Boolean);
+    onSave({ ...p, features });
+  }
+
+  const isNew = initial.id.startsWith('p-') && !initial.name;
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal animate-slide-up" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
+        <div className="modal-header">
+          <h3 className="modal-title">{isNew ? 'Create Plan' : 'Edit Plan'}</h3>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={submit}>
+          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="form-group">
+                <label className="form-label">Plan Type</label>
+                <select className="input" value={p.kind} onChange={(e) => set('kind', e.target.value as PlanKind)}>
+                  <option value="Membership">Gym Membership</option>
+                  <option value="PT">Personal Training</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Duration</label>
+                <select className="input" value={p.duration} onChange={(e) => set('duration', e.target.value as PlanDuration)}>
+                  {DURATIONS.map((d) => <option key={d}>{d}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Plan Name *</label>
+              <input className="input" required value={p.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Quarterly Premium" />
+            </div>
+
+            {p.kind === 'PT' && (
+              <div className="form-group">
+                <label className="form-label">Sessions per Week</label>
+                <input className="input" type="number" min={1} max={7} value={p.sessions_per_week || 3}
+                  onChange={(e) => set('sessions_per_week', parseInt(e.target.value) || 3)} />
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+              <div className="form-group">
+                <label className="form-label">Base (₹)</label>
+                <input className="input" type="number" min={0} value={p.base_amount}
+                  onChange={(e) => recalc(parseFloat(e.target.value) || 0, p.discount)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Discount (₹)</label>
+                <input className="input" type="number" min={0} value={p.discount}
+                  onChange={(e) => recalc(p.base_amount, parseFloat(e.target.value) || 0)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Final (₹)</label>
+                <input className="input" type="number" value={p.final_amount} readOnly
+                  style={{ borderColor: 'var(--brand)', fontWeight: 700, color: 'var(--brand)', background: 'rgba(220,38,38,0.04)' }} />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Features (one per line)</label>
+              <textarea className="input" rows={5} value={featuresText} onChange={(e) => setFeatures(e.target.value)}
+                placeholder={'Full gym access\nLocker facility\nFree diet consult'} />
+            </div>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-secondary)' }}>
+              <input type="checkbox" checked={!!p.popular} onChange={(e) => set('popular', e.target.checked)}
+                style={{ width: 16, height: 16, accentColor: 'var(--brand)' }} />
+              Mark as Most Popular
+            </label>
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-outline btn-sm" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary btn-sm">Save Plan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Quick-action card ─────────────────────────────────── */
+function ActionCard({ icon, title, desc, count, label, onClick, color }: {
+  icon: React.ReactNode; title: string; desc: string; count: string; label: string;
+  onClick: () => void; color: string;
+}) {
+  return (
+    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+        <div style={{ width: 40, height: 40, borderRadius: 10, background: `${color}18`, border: `1px solid ${color}40`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', color, fontSize: 18 }}>
+          {icon}
+        </div>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>{title}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{desc}</div>
+        </div>
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{count}</div>
+      <button className="btn btn-primary btn-sm" onClick={onClick} style={{ width: '100%', justifyContent: 'center' }}>
+        <Zap size={12} /> {label}
+      </button>
+    </div>
+  );
+}
+
+/* ─── Main Page ─────────────────────────────────────────── */
 function PlansContent() {
-  const [plans, setPlans] = useState<StoredPlan[]>([]);
-  const [tab, setTab] = useState<'all' | 'Membership' | 'PT'>('all');
+  const [plans, setPlans]     = useState<StoredPlan[]>([]);
+  const [tab, setTab]         = useState<'all' | 'Membership' | 'PT'>('all');
   const [editing, setEditing] = useState<StoredPlan | null>(null);
   const [creating, setCreating] = useState<'Membership' | 'PT' | null>(null);
-  const [success, setSuccess] = useState('');
+  const [flash, setFlash]     = useState('');
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem(PLANS_KEY);
       if (raw) setPlans(JSON.parse(raw));
-      else {
-        setPlans(DEFAULT_PLANS);
-        localStorage.setItem(PLANS_KEY, JSON.stringify(DEFAULT_PLANS));
-      }
-    } catch {
-      setPlans(DEFAULT_PLANS);
-    }
+      else { setPlans(DEFAULT_PLANS); localStorage.setItem(PLANS_KEY, JSON.stringify(DEFAULT_PLANS)); }
+    } catch { setPlans(DEFAULT_PLANS); }
   }, []);
 
   useEffect(() => {
     if (plans.length > 0) {
-      try {
-        localStorage.setItem(PLANS_KEY, JSON.stringify(plans));
-      } catch {}
+      try { localStorage.setItem(PLANS_KEY, JSON.stringify(plans)); } catch {}
     }
   }, [plans]);
 
-  function flash(msg: string) {
-    setSuccess(msg);
-    setTimeout(() => setSuccess(''), 3000);
+  function showFlash(msg: string) {
+    setFlash(msg); setTimeout(() => setFlash(''), 3000);
   }
 
   function deletePlan(id: string) {
     if (!confirm('Delete this plan?')) return;
     setPlans(plans.filter((p) => p.id !== id));
-    flash('Plan deleted');
+    showFlash('Plan deleted.');
   }
 
-  function resetDefaults() {
-    if (!confirm('Reset all plans to default templates? This will overwrite your current plans.'))
-      return;
+  function generateSet(kind: PlanKind) {
+    const label = kind === 'PT' ? 'Personal Training' : 'Membership';
+    if (!confirm(`Generate the full ${label} plan set? Existing ${label} plans will be replaced.`)) return;
+    const fresh  = DEFAULT_PLANS.filter((p) => p.kind === kind);
+    const others = plans.filter((p) => p.kind !== kind);
+    setPlans([...others, ...fresh]);
+    showFlash(`${label} plans generated.`);
+  }
+
+  function resetAll() {
+    if (!confirm('Reset ALL plans to default templates?')) return;
     setPlans(DEFAULT_PLANS);
-    flash('Plans reset to defaults');
-  }
-
-  function generatePtSet() {
-    if (
-      !confirm(
-        'Generate the full Personal Training plan set? This adds 4 plans and replaces existing PT plans.',
-      )
-    )
-      return;
-    const ptPlans = DEFAULT_PLANS.filter((p) => p.kind === 'PT');
-    const others = plans.filter((p) => p.kind !== 'PT');
-    setPlans([...others, ...ptPlans]);
-    flash('PT plans generated');
-  }
-
-  function generateMembershipSet() {
-    if (
-      !confirm(
-        'Generate the full Gym Membership plan set? This adds 4 plans and replaces existing Membership plans.',
-      )
-    )
-      return;
-    const memPlans = DEFAULT_PLANS.filter((p) => p.kind === 'Membership');
-    const others = plans.filter((p) => p.kind !== 'Membership');
-    setPlans([...others, ...memPlans]);
-    flash('Membership plans generated');
+    showFlash('Plans reset to defaults.');
   }
 
   const visible = tab === 'all' ? plans : plans.filter((p) => p.kind === tab);
-  const totals = {
-    membership: plans.filter((p) => p.kind === 'Membership').length,
-    pt: plans.filter((p) => p.kind === 'PT').length,
-  };
+  const memCount = plans.filter((p) => p.kind === 'Membership').length;
+  const ptCount  = plans.filter((p) => p.kind === 'PT').length;
 
   return (
-    <AppShell>
-      <div className="page-main">
-        <div className="page-content fade-up">
-          {success && <div className="alert alert-success">✓ {success}</div>}
+    <AppShell title="Plans">
+      <div className="page-container animate-fade-in">
 
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-              gap: '0.85rem',
-              marginBottom: '1.5rem',
-            }}
-          >
-            <div
-              className="card"
-              style={{ display: 'flex', flexDirection: 'column', gap: '.7rem' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '.65rem' }}>
-                <div
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 10,
-                    background: 'var(--brand-soft)',
-                    border: '1px solid rgba(239,45,60,0.30)',
-                    color: 'var(--brand-hi)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 18,
-                  }}
-                >
-                  ⚒
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14, letterSpacing: '-0.012em' }}>
-                    Generate Gym Plans
-                  </div>
-                  <div className="text-muted text-sm">Monthly · Quarterly · Half · Yearly</div>
-                </div>
-              </div>
-              <div className="text-muted text-sm">
-                {totals.membership} membership plan{totals.membership !== 1 ? 's' : ''} configured
-              </div>
-              <button
-                className="btn btn-primary btn-sm w-full"
-                onClick={generateMembershipSet}
-              >
-                ⚡ Generate Membership Set
-              </button>
-            </div>
-
-            <div
-              className="card"
-              style={{ display: 'flex', flexDirection: 'column', gap: '.7rem' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '.65rem' }}>
-                <div
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 10,
-                    background: 'var(--purple-bg)',
-                    border: '1px solid rgba(168,85,247,0.30)',
-                    color: 'var(--purple)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 18,
-                  }}
-                >
-                  ◆
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14, letterSpacing: '-0.012em' }}>
-                    Generate PT Plans
-                  </div>
-                  <div className="text-muted text-sm">Personal Training packages</div>
-                </div>
-              </div>
-              <div className="text-muted text-sm">
-                {totals.pt} PT plan{totals.pt !== 1 ? 's' : ''} configured
-              </div>
-              <button className="btn btn-primary btn-sm w-full" onClick={generatePtSet}>
-                ⚡ Generate PT Set
-              </button>
-            </div>
-
-            <div
-              className="card"
-              style={{ display: 'flex', flexDirection: 'column', gap: '.7rem' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '.65rem' }}>
-                <div
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 10,
-                    background: 'rgba(34,197,94,0.12)',
-                    border: '1px solid rgba(34,197,94,0.30)',
-                    color: 'var(--success)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 18,
-                  }}
-                >
-                  ✦
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14, letterSpacing: '-0.012em' }}>
-                    Custom Plan
-                  </div>
-                  <div className="text-muted text-sm">Build a unique offer</div>
-                </div>
-              </div>
-              <div className="text-muted text-sm">Custom plans with your pricing & perks</div>
-              <button
-                className="btn btn-ghost btn-sm w-full"
-                onClick={() => setCreating('PT')}
-              >
-                + Build Custom Plan
-              </button>
-            </div>
+        {/* ── Header ── */}
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">Membership Plans</h1>
+            <p className="page-subtitle">{plans.length} plan{plans.length !== 1 ? 's' : ''} configured</p>
           </div>
-
-          <div
-            style={{
-              display: 'flex',
-              gap: '.5rem',
-              flexWrap: 'wrap',
-              marginBottom: '1.25rem',
-            }}
-          >
-            <button
-              className={`tab-pill ${tab === 'all' ? 'active' : ''}`}
-              onClick={() => setTab('all')}
-            >
-              All Plans · {plans.length}
-            </button>
-            <button
-              className={`tab-pill ${tab === 'Membership' ? 'active' : ''}`}
-              onClick={() => setTab('Membership')}
-            >
-              Gym · {totals.membership}
-            </button>
-            <button
-              className={`tab-pill ${tab === 'PT' ? 'active' : ''}`}
-              onClick={() => setTab('PT')}
-            >
-              Personal Training · {totals.pt}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-outline btn-sm" onClick={resetAll}>Reset to Defaults</button>
+            <button className="btn btn-primary btn-sm" onClick={() => setCreating('Membership')}>
+              <Plus size={14} /> Create Plan
             </button>
           </div>
-
-          {visible.length === 0 ? (
-            <div className="card" style={{ padding: '3rem', textAlign: 'center' }}>
-              <div style={{ fontSize: 28, marginBottom: 12, opacity: 0.5 }}>◌</div>
-              <div style={{ color: 'var(--muted)', marginBottom: 16 }}>
-                No plans yet — generate a default set to get started
-              </div>
-              <div
-                style={{
-                  display: 'flex',
-                  gap: '.5rem',
-                  justifyContent: 'center',
-                  flexWrap: 'wrap',
-                }}
-              >
-                <button className="btn btn-primary" onClick={generateMembershipSet}>
-                  Generate Gym Plans
-                </button>
-                <button className="btn btn-ghost" onClick={generatePtSet}>
-                  Generate PT Plans
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="plan-grid">
-              {visible.map((p) => (
-                <div
-                  key={p.id}
-                  className={`plan-card ${p.popular ? 'popular' : ''} ${
-                    p.kind === 'PT' ? 'pt' : ''
-                  }`}
-                >
-                  {p.popular && <span className="plan-tag popular">★ Popular</span>}
-                  {!p.popular && p.kind === 'PT' && <span className="plan-tag pt">PT</span>}
-                  <div className="plan-name">{p.duration}</div>
-                  <div
-                    style={{
-                      fontSize: 16,
-                      fontWeight: 700,
-                      marginBottom: '.25rem',
-                      letterSpacing: '-0.012em',
-                    }}
-                  >
-                    {p.name}
-                  </div>
-                  <div className="plan-price">₹{p.final_amount.toLocaleString('en-IN')}</div>
-                  <div className="plan-price-sub">
-                    {p.discount > 0 && (
-                      <span
-                        style={{
-                          textDecoration: 'line-through',
-                          marginRight: 8,
-                          color: 'var(--muted-2)',
-                        }}
-                        className="tabular"
-                      >
-                        ₹{p.base_amount.toLocaleString('en-IN')}
-                      </span>
-                    )}
-                    {p.discount > 0 && (
-                      <span style={{ color: 'var(--success)', fontWeight: 700 }}>
-                        save ₹{p.discount.toLocaleString('en-IN')}
-                      </span>
-                    )}
-                    {p.discount === 0 && <span>per {p.duration.toLowerCase()}</span>}
-                  </div>
-                  {p.kind === 'PT' && p.sessions_per_week && (
-                    <div
-                      style={{
-                        display: 'inline-block',
-                        padding: '4px 10px',
-                        borderRadius: 999,
-                        fontSize: 10.5,
-                        fontWeight: 700,
-                        background: 'var(--purple-bg)',
-                        color: 'var(--purple)',
-                        marginBottom: '.75rem',
-                        letterSpacing: '0.4px',
-                        textTransform: 'uppercase',
-                      }}
-                    >
-                      {p.sessions_per_week}× sessions / week
-                    </div>
-                  )}
-                  <ul className="plan-features">
-                    {p.features.slice(0, 5).map((f: string, i: number) => (
-                      <li key={i}>{f}</li>
-                    ))}
-                  </ul>
-                  <div style={{ display: 'flex', gap: '.5rem', marginTop: '1rem' }}>
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      style={{ flex: 1 }}
-                      onClick={() => setEditing(p)}
-                    >
-                      ✎ Edit
-                    </button>
-                    <button
-                      className="btn btn-danger btn-icon btn-sm"
-                      onClick={() => deletePlan(p.id)}
-                      aria-label="Delete"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
+
+        {/* ── Flash ── */}
+        {flash && (
+          <div className="alert alert-success animate-slide-up" style={{ marginBottom: 16 }}>
+            <CheckCircle size={14} /> {flash}
+          </div>
+        )}
+
+        {/* ── Quick-generate cards ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14, marginBottom: 20 }}>
+          <ActionCard
+            icon={<Package size={18} />}
+            title="Gym Membership"
+            desc="Monthly · Quarterly · Half · Yearly"
+            count={`${memCount} plan${memCount !== 1 ? 's' : ''} configured`}
+            label="Generate Membership Set"
+            color="var(--brand)"
+            onClick={() => generateSet('Membership')}
+          />
+          <ActionCard
+            icon={<Star size={18} />}
+            title="Personal Training"
+            desc="PT packages with sessions/week"
+            count={`${ptCount} plan${ptCount !== 1 ? 's' : ''} configured`}
+            label="Generate PT Set"
+            color="#7c3aed"
+            onClick={() => generateSet('PT')}
+          />
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--success)' }}>
+                <Plus size={18} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>Custom Plan</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Build a unique offer</div>
+              </div>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Custom pricing & perks</div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button className="btn btn-outline btn-sm" style={{ flex: 1, justifyContent: 'center' }} onClick={() => setCreating('Membership')}>
+                <Plus size={12} /> Membership
+              </button>
+              <button className="btn btn-outline btn-sm" style={{ flex: 1, justifyContent: 'center' }} onClick={() => setCreating('PT')}>
+                <Plus size={12} /> PT Plan
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Tabs ── */}
+        <div className="tab-bar" style={{ marginBottom: 20 }}>
+          <button className={`tab-btn ${tab === 'all' ? 'active' : ''}`} onClick={() => setTab('all')}>
+            All Plans · {plans.length}
+          </button>
+          <button className={`tab-btn ${tab === 'Membership' ? 'active' : ''}`} onClick={() => setTab('Membership')}>
+            Gym Membership · {memCount}
+          </button>
+          <button className={`tab-btn ${tab === 'PT' ? 'active' : ''}`} onClick={() => setTab('PT')}>
+            Personal Training · {ptCount}
+          </button>
+        </div>
+
+        {/* ── Plans grid ── */}
+        {visible.length === 0 ? (
+          <div className="empty-state">
+            <Package size={36} className="empty-state-icon" />
+            <p className="empty-state-title">No plans yet</p>
+            <p className="empty-state-desc">Generate a default set or create a custom plan to get started.</p>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button className="btn btn-primary btn-sm" onClick={() => generateSet('Membership')}>
+                <Zap size={13} /> Generate Gym Plans
+              </button>
+              <button className="btn btn-outline btn-sm" onClick={() => generateSet('PT')}>
+                Generate PT Plans
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 16 }}>
+            {visible.map((p) => (
+              <PlanCard key={p.id} plan={p} onEdit={setEditing} onDelete={deletePlan} />
+            ))}
+          </div>
+        )}
       </div>
 
+      {/* ── Modal ── */}
       {(editing || creating) && (
         <PlanModal
-          initial={
-            editing || {
-              id: 'p-' + Date.now(),
-              kind: (creating || 'Membership') as PlanKind,
-              name: '',
-              duration: 'Monthly' as PlanDuration,
-              base_amount: 0,
-              discount: 0,
-              final_amount: 0,
-              sessions_per_week: creating === 'PT' ? 3 : undefined,
-              features: [],
-            }
-          }
-          onClose={() => {
-            setEditing(null);
-            setCreating(null);
+          initial={editing ?? {
+            id: `p-${Date.now()}`,
+            kind: (creating || 'Membership') as PlanKind,
+            name: '',
+            duration: 'Monthly' as PlanDuration,
+            base_amount: 0,
+            discount: 0,
+            final_amount: 0,
+            sessions_per_week: creating === 'PT' ? 3 : undefined,
+            features: [],
           }}
+          onClose={() => { setEditing(null); setCreating(null); }}
           onSave={(p) => {
             if (editing) {
-              setPlans(plans.map((x) => (x.id === p.id ? p : x)));
-              flash('Plan updated');
+              setPlans(plans.map((x) => x.id === p.id ? p : x));
+              showFlash('Plan updated.');
             } else {
               setPlans([...plans, p]);
-              flash('Plan created');
+              showFlash('Plan created.');
             }
             setEditing(null);
             setCreating(null);
@@ -397,195 +443,6 @@ function PlansContent() {
   );
 }
 
-function PlanModal({
-  initial,
-  onClose,
-  onSave,
-}: {
-  initial: StoredPlan;
-  onClose: () => void;
-  onSave: (p: StoredPlan) => void;
-}) {
-  const [p, setP] = useState<StoredPlan>(initial);
-  const [featuresText, setFeaturesText] = useState(initial.features.join('\n'));
-
-  function set<K extends keyof StoredPlan>(k: K, v: StoredPlan[K]) {
-    setP((prev) => ({ ...prev, [k]: v }));
-  }
-
-  function recalc(base: number, disc: number) {
-    setP((prev) => ({
-      ...prev,
-      base_amount: base,
-      discount: disc,
-      final_amount: Math.max(0, base - disc),
-    }));
-  }
-
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    if (!p.name.trim()) {
-      alert('Plan name is required');
-      return;
-    }
-    if (p.final_amount <= 0) {
-      alert('Final amount must be greater than 0');
-      return;
-    }
-    const features = featuresText
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    onSave({ ...p, features });
-  }
-
-  return (
-    <div
-      className="modal"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <form className="card" onSubmit={submit} style={{ maxWidth: 580 }}>
-        <div className="card-title" style={{ marginBottom: '1.1rem' }}>
-          {initial.id.startsWith('p-') && !initial.name ? 'Create Plan' : 'Edit Plan'}
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '.85rem' }}>
-          <div className="form-row form-row-2">
-            <div>
-              <label>Plan Type</label>
-              <select
-                className="input select"
-                value={p.kind}
-                onChange={(e) => set('kind', e.target.value as PlanKind)}
-              >
-                <option value="Membership">Gym Membership</option>
-                <option value="PT">Personal Training</option>
-              </select>
-            </div>
-            <div>
-              <label>Duration</label>
-              <select
-                className="input select"
-                value={p.duration}
-                onChange={(e) => set('duration', e.target.value as PlanDuration)}
-              >
-                {DURATIONS.map((d) => (
-                  <option key={d}>{d}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label>Plan Name *</label>
-            <input
-              className="input"
-              required
-              value={p.name}
-              onChange={(e) => set('name', e.target.value)}
-              placeholder="e.g. PT Quarterly Premium"
-            />
-          </div>
-
-          {p.kind === 'PT' && (
-            <div>
-              <label>Sessions per Week</label>
-              <input
-                className="input"
-                type="number"
-                min={1}
-                max={7}
-                value={p.sessions_per_week || 3}
-                onChange={(e) => set('sessions_per_week', parseInt(e.target.value) || 3)}
-              />
-            </div>
-          )}
-
-          <div className="form-row form-row-3">
-            <div>
-              <label>Base (₹)</label>
-              <input
-                className="input"
-                type="number"
-                min={0}
-                value={p.base_amount}
-                onChange={(e) => recalc(parseFloat(e.target.value) || 0, p.discount)}
-              />
-            </div>
-            <div>
-              <label>Discount (₹)</label>
-              <input
-                className="input"
-                type="number"
-                min={0}
-                value={p.discount}
-                onChange={(e) => recalc(p.base_amount, parseFloat(e.target.value) || 0)}
-              />
-            </div>
-            <div>
-              <label>Final (₹) *</label>
-              <input
-                className="input"
-                type="number"
-                min={1}
-                value={p.final_amount}
-                readOnly
-                style={{
-                  borderColor: 'var(--brand)',
-                  fontWeight: 700,
-                  background: 'var(--brand-soft)',
-                  color: 'var(--brand-hi)',
-                }}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label>Features (one per line)</label>
-            <textarea
-              className="input"
-              rows={5}
-              value={featuresText}
-              onChange={(e) => setFeaturesText(e.target.value)}
-              placeholder={'Full gym access\nLocker facility\nFree diet consult'}
-            />
-          </div>
-
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '.5rem',
-              cursor: 'pointer',
-              textTransform: 'none',
-              letterSpacing: 0,
-              fontWeight: 500,
-              color: 'var(--text-2)',
-              fontSize: 13,
-              marginBottom: 0,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={!!p.popular}
-              onChange={(e) => set('popular', e.target.checked)}
-              style={{ width: 16, height: 16, accentColor: 'var(--brand)' }}
-            />
-            Mark as Most Popular
-          </label>
-        </div>
-
-        <div style={{ display: 'flex', gap: '.55rem', marginTop: '1.4rem' }}>
-          <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
-            Save Plan
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
-        </div>
-      </form>
-    </div>
-  );
+export default function PlansPage() {
+  return <Guard><PlansContent /></Guard>;
 }
